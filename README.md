@@ -1,2 +1,2 @@
 # metrics
-Econometrics library for python
+Econometrics library for Python
