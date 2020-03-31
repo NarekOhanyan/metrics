@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[3]:
+# In[50]:
 
 
 import numpy as np
@@ -11,7 +11,7 @@ import matplotlib.pyplot as mpl
 
 
 # a = np.random.random((100,3))
-# data = np.random.random((100,10))
+# data = np.random.random((1000,10))
 
 # In[3]:
 
@@ -308,7 +308,7 @@ class varms:
             self.iv.ins_names = ins_names
 
 
-# In[31]:
+# In[76]:
 
 
 def varols(data,nL):
@@ -324,6 +324,7 @@ def varols(data,nL):
     Y = data[:,nL:]
 
     cB = (Y@Z.T)@(np.linalg.inv(Z@Z.T))
+    
     c = cB[:,0]
     B = cB[:,1:].T.reshape((nL,nY,nY)).transpose((0,2,1))
     U = Y-cB@Z
@@ -331,7 +332,7 @@ def varols(data,nL):
     return c, B, U, S
 
 
-# In[32]:
+# In[96]:
 
 
 @nb.njit
@@ -349,8 +350,6 @@ def varols_njit(data,nL):
     Y = np.ascontiguousarray(data[:,nL:])
     Y_T = np.ascontiguousarray(Y.T)
 
-#     cB = np.ascontiguousarray(Y@Z_T)@np.ascontiguousarray(np.linalg.inv(Z@Z_T))
-#     cB = np.ascontiguousarray(np.linalg.lstsq(Z_T,Y_T,rcond=None)[0].T)
     cB = np.linalg.solve(Z@Z_T,Z@Y_T).T
 
     c = cB[:,0]
@@ -370,8 +369,11 @@ def varsim(c,B,U,Y0):
     Y[:,:nL] = Y0
     
     for t in range(nL,nL+nT):
-#             BB = B.swapaxes(1,2).reshape((nL*nY,nY)).T
-#             Y[:,t] = c + (BB@Y[:,t-nL:t][:,::-1].T.reshape((nL*nY,1))).reshape((-1,)) + U[:,t-nL]
+        # The methods (a) and (b) are equivalent
+        ## (a)
+        # BB = B.swapaxes(1,2).reshape((nL*nY,nY)).T
+        # Y[:,t] = c + (BB@Y[:,t-nL:t][:,::-1].T.reshape((nL*nY,1))).reshape((-1,)) + U[:,t-nL]
+        ## (b)
         Y_t = c + U[:,t-nL]
         for l in range(nL):
             Y_t += B[l]@Y[:,t-l-1]
@@ -390,12 +392,15 @@ def varsim_njit(c,B,U,Y0):
     Y[:,:nL] = Y0
     
     for t in range(nL,nL+nT):
-            BB = np.ascontiguousarray(B.transpose((0,2,1))).reshape((nL*nY,nY)).T
-            Y[:,t] = c + (BB@np.ascontiguousarray(Y[:,t-nL:t][:,::-1].T).reshape((nL*nY,1))).reshape((-1,)) + U[:,t-nL]
-#         Y_t = c + U[:,t-nL]
-#         for l in range(nL):
-#             Y_t += B[l]@Y[:,t-l-1]
-#         Y[:,t] = Y_t
+        # The methods (a) and (b) are equivalent
+        ## (a)
+        BB = np.ascontiguousarray(B.transpose((0,2,1))).reshape((nL*nY,nY)).T
+        Y[:,t] = c + (BB@np.ascontiguousarray(Y[:,t-nL:t][:,::-1].T).reshape((nL*nY,1))).reshape((-1,)) + U[:,t-nL]
+        ## (b)
+        # Y_t = c + U[:,t-nL]
+        # for l in range(nL):
+        #     Y_t += B[l]@Y[:,t-l-1]
+        # Y[:,t] = Y_t
     return Y
 
 
@@ -523,7 +528,7 @@ def get_A0inv_njit(method=None,U=None,S=None,idv=None,instruments=None):
         A0inv = np.linalg.cholesky(S)
     if method == 'iv':
         (nY,nT) = U.shape
-        method_ = 1
+        method_ = 0
         if method_ == 0:
             A0inv = np.sqrt(np.diag(np.diag(S)))
 #                 A0inv = np.zeros(S.shape)
@@ -539,9 +544,11 @@ def get_A0inv_njit(method=None,U=None,S=None,idv=None,instruments=None):
                     insUcov = np.cov(insU,rowvar=False)
 #                     print(insUcov)
     #             print((insUcov[0:1,1:]@np.linalg.inv(insUcov[1:,1:])@insUcov[1:,0:1]))
-                method__ = 1
+                method__ = 0
                 if method__ == 0: # regression
-                    beta1 = np.linalg.lstsq(np.column_stack((np.ones((insU.shape[0],1)),insU[:,0:1])),insU[:,1:],rcond=None)[0][1,:]
+                    X = np.column_stack((np.ones((insU.shape[0],1)),insU[:,0:1]))
+                    Y = insU[:,1:]
+                    beta1 = np.linalg.solve(X.T@X,X.T@Y)[1,:]
     #             beta_idv = insUcov[1:,0:1]@np.linalg.cholesky(insUcov[0:1,1:]@np.linalg.inv(insUcov[1:,1:])@insUcov[1:,0:1])
     #             beta_idv = beta_idv[:]/sp[4]
     #             print(beta_idv)
