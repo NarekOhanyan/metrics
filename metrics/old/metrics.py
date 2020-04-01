@@ -1,17 +1,16 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[50]:
+# In[1]:
 
 
 import numpy as np
-import numba as nb
 import pandas as pd
 import matplotlib.pyplot as mpl
 
 
 # a = np.random.random((100,3))
-# data = np.random.random((1000,10))
+# B = np.random.random((100,10))
 
 # In[3]:
 
@@ -142,7 +141,7 @@ def ols(yin,Xin,dfcin=True):
 # In[6]:
 
 
-class nsm:
+class nsm(object):
         
     def __init__(self,yields,tau,lam):
         
@@ -220,9 +219,9 @@ class nsm:
 # In[7]:
 
 
-class varms:
+class varms(object):
     
-    class dir:
+    class dir(object):
         def __init__(self):
             pass
         
@@ -308,414 +307,12 @@ class varms:
             self.iv.ins_names = ins_names
 
 
-# In[76]:
+# In[188]:
 
 
-def varols(data,nL):
-    (n0,n1) = data.shape
-    nT = n1 - nL
-    nY = n0
-    Z = np.ones((1,n1))
-
-    for p in range(1,1+nL):
-        Z = np.row_stack((Z,np.roll(data,p)))
-
-    Z = Z[:,nL:]
-    Y = data[:,nL:]
-
-    cB = (Y@Z.T)@(np.linalg.inv(Z@Z.T))
+class varm(object):
     
-    c = cB[:,0]
-    B = cB[:,1:].T.reshape((nL,nY,nY)).transpose((0,2,1))
-    U = Y-cB@Z
-    S = (1/(nT-nL*nY-1))*(U@U.T)
-    return c, B, U, S
-
-
-# In[96]:
-
-
-@nb.njit
-def varols_njit(data,nL):
-    (n0,n1) = data.shape
-    nT = n1 - nL
-    nY = n0
-    Z = np.ones((1,n1))
-
-    for p in range(1,1+nL):
-        Z = np.row_stack((Z,np.roll(data,p)))
-    
-    Z = np.ascontiguousarray(Z[:,nL:])
-    Z_T = np.ascontiguousarray(Z.T)
-    Y = np.ascontiguousarray(data[:,nL:])
-    Y_T = np.ascontiguousarray(Y.T)
-
-    cB = np.linalg.solve(Z@Z_T,Z@Y_T).T
-
-    c = cB[:,0]
-    B = np.ascontiguousarray(cB[:,1:].T).reshape((nL,nY,nY)).transpose((0,2,1))
-    U = Y-cB@Z
-    S = (1/(nT-nL*nY-1))*(U@U.T)
-    return c, B, U, S
-
-
-# In[33]:
-
-
-def varsim(c,B,U,Y0):
-    (nY,nT) = U.shape
-    (_,nL) = Y0.shape
-    Y = np.full(((nY,nL+nT)),np.nan)
-    Y[:,:nL] = Y0
-    
-    for t in range(nL,nL+nT):
-        # The methods (a) and (b) are equivalent
-        ## (a)
-        # BB = B.swapaxes(1,2).reshape((nL*nY,nY)).T
-        # Y[:,t] = c + (BB@Y[:,t-nL:t][:,::-1].T.reshape((nL*nY,1))).reshape((-1,)) + U[:,t-nL]
-        ## (b)
-        Y_t = c + U[:,t-nL]
-        for l in range(nL):
-            Y_t += B[l]@Y[:,t-l-1]
-        Y[:,t] = Y_t
-    return Y
-
-
-# In[34]:
-
-
-@nb.njit
-def varsim_njit(c,B,U,Y0):
-    (nY,nT) = U.shape
-    (_,nL) = Y0.shape
-    Y = np.full(((nY,nL+nT)),np.nan)
-    Y[:,:nL] = Y0
-    
-    for t in range(nL,nL+nT):
-        # The methods (a) and (b) are equivalent
-        ## (a)
-        BB = np.ascontiguousarray(B.transpose((0,2,1))).reshape((nL*nY,nY)).T
-        Y[:,t] = c + (BB@np.ascontiguousarray(Y[:,t-nL:t][:,::-1].T).reshape((nL*nY,1))).reshape((-1,)) + U[:,t-nL]
-        ## (b)
-        # Y_t = c + U[:,t-nL]
-        # for l in range(nL):
-        #     Y_t += B[l]@Y[:,t-l-1]
-        # Y[:,t] = Y_t
-    return Y
-
-
-# In[35]:
-
-
-def get_Psi_from_B(nL,nH,nY,B):
-    Psi = np.zeros((nH+1,nY,nY))
-    Psi[0] = np.eye(nY)
-    for h in range(1,nH+1):
-        for i in range(min(h,nL)):
-            Psi[h] += Psi[h-i-1]@B[i]
-    return Psi
-
-
-# In[36]:
-
-
-@nb.njit
-def get_Psi_from_B_njit(nL,nH,nY,B):
-    Psi = np.zeros((nH+1,nY,nY))
-    Psi[0] = np.eye(nY)
-    for h in range(1,nH+1):
-        for i in range(min(h,nL)):
-            Psi[h] += np.ascontiguousarray(Psi[h-i-1])@np.ascontiguousarray(B[i])
-    return Psi
-
-
-# In[37]:
-
-
-def get_A0inv(method=None,U=None,S=None,idv=None,instruments=None):
-    if method == 'ch':
-        A0inv = np.linalg.cholesky(S)
-    if method == 'iv':
-        (nY,nT) = U.shape
-        method_ = 0
-        if method_ == 0:
-            A0inv = np.sqrt(np.diag(np.diag(S)))
-#                 A0inv = np.zeros(S.shape)
-            for v,ins in zip(idv,instruments.T):
-                insU = np.column_stack((ins.T,U.T))
-                insUnan = np.isnan(insU)
-                insU = insU[~insUnan.any(axis=1),:]
-                if insU.shape[0] < 10:
-                    raise ValueError('Not enough observations to perform SVAR-IV identification')
-                if True: # uncentered
-                    insUcov = (1/nT)*(insU.T@insU)
-                else:    # centered
-                    insUcov = np.cov(insU,rowvar=False)
-#                     print(insUcov)
-    #             print((insUcov[0:1,1:]@np.linalg.inv(insUcov[1:,1:])@insUcov[1:,0:1]))
-                method__ = 0
-                if method__ == 0: # regression
-                    X = np.column_stack((np.ones((insU.shape[0],1)),insU[:,0:1]))
-                    Y = insU[:,1:]
-                    beta1 = np.linalg.solve(X.T@X,X.T@Y)[1,:]
-    #             beta_idv = insUcov[1:,0:1]@np.linalg.cholesky(insUcov[0:1,1:]@np.linalg.inv(insUcov[1:,1:])@insUcov[1:,0:1])
-    #             beta_idv = beta_idv[:]/sp[4]
-    #             print(beta_idv)
-    #             insUstd = np.std(insU,axis=0,ddof=1).reshape(-1,1)
-                if method__ == 1: # moments
-                    beta1 = insUcov[0,1:]
-                # normalize
-#                     print(beta1)
-                beta1 = beta1[:]/beta1[v]
-#                     print(beta1)
-    #             A0inv[:,v] = (insUcov[1:,0]/insUstd[0]).T # st. dev. of explained part
-    #             A0inv[:,v] = (insUcov[1:,0]/insUcov[v+1,0]).T # st. dev. of residual
-    #             A0inv[:,v] = (insUcov[1:,0]/(insUcov[v+1,0]/insUstd[v+1])).T # st. dev. of residual
-    #             A0inv[:,v] = A0inv[:,v]/A0inv[v,v] # unit
-                A0inv[:,v] = beta1.T
-        if method_ == 1:
-            nM = instruments.shape[1]
-            not_idv = np.array([_ for _ in range(nY) if _ not in idv])
-            # Reorder instrumented residuals first
-            U_ = np.row_stack((U[idv,:],U[not_idv,:]))
-#                 print(U_.shape)
-            A0inv = np.sqrt(np.diag(np.diag(S)))
-#                 A0inv = np.zeros((nY,nY))
-            # The formulas from Mertens & Ravn (2013) Appendix A
-            Suu = (1/nT)*(U_@U_.T)
-            Smu = (1/nT)*(instruments.T@U_.T)
-#                 print(Smu)
-            Smu1 = Smu[:,:nM]
-            Smu2 = Smu[:,nM:]
-            S11 = Suu[:nM,:nM]
-            S21 = Suu[nM:,:nM]
-            S22 = Suu[nM:,nM:]
-            b21_b11_1 = (np.linalg.inv(Smu1)@Smu2).T
-            Z = b21_b11_1@S11@b21_b11_1.T-(S21@b21_b11_1.T+b21_b11_1@S21.T)+S22
-            b12_b12_T = (S21-b21_b11_1@S11).T@np.linalg.inv(Z)@(S21-b21_b11_1@S11)
-            b22_b22_T = S22+b21_b11_1@(b12_b12_T-S11)@b21_b11_1.T
-            b12_b22_1 = (b12_b12_T@b21_b11_1.T+(S21-b21_b11_1@S11).T)@b22_b22_T
-            b11_b11_T = S11-b12_b12_T
-            S1_S1_T = (np.eye(nM)-b12_b22_1@b21_b11_1)@b11_b11_T@(np.eye(nM)-b12_b22_1@b21_b11_1).T
-            S1 = np.linalg.cholesky(S1_S1_T)
-            b11_S1_1 = np.linalg.inv(np.eye(nM)-b12_b22_1@b21_b11_1)
-            b21_S1_1 = b21_b11_1@np.linalg.inv(np.eye(nM)-b12_b22_1@b21_b11_1)
-            b11 = b11_S1_1@S1
-            b21 = b21_S1_1@S1
-#                 print(b21_b11_1)
-#                 print(S1)
-#                 print(b11_S1_1,b21_S1_1)
-#                 print(b21_S1_1/b11_S1_1)
-#                 print(b21/b11)
-#                 print(b21)
-#                 print(idv)
-#                 print(not_idv)
-            idv_array = np.array(idv)
-            not_idv_array = np.array(not_idv)
-            A0inv[idv_array[:,None],idv_array] = b11
-#                 print(A0inv[idv,:][:,idv])
-            A0inv[not_idv_array[:,None],idv_array] = b21
-#                 print(A0inv)
-    return A0inv
-
-
-# In[38]:
-
-
-@nb.njit
-def get_A0inv_njit(method=None,U=None,S=None,idv=None,instruments=None):
-    if method == 'ch':
-        A0inv = np.linalg.cholesky(S)
-    if method == 'iv':
-        (nY,nT) = U.shape
-        method_ = 0
-        if method_ == 0:
-            A0inv = np.sqrt(np.diag(np.diag(S)))
-#                 A0inv = np.zeros(S.shape)
-            for v,ins in zip(idv,instruments.T):
-                insU = np.column_stack((ins.T,U.T))
-                insUnan = np.isnan(insU)
-                insU = insU[~insUnan.any(axis=1),:]
-                if insU.shape[0] < 10:
-                    raise ValueError('Not enough observations to perform SVAR-IV identification')
-                if True: # uncentered
-                    insUcov = (1/nT)*(insU.T@insU)
-                else:    # centered
-                    insUcov = np.cov(insU,rowvar=False)
-#                     print(insUcov)
-    #             print((insUcov[0:1,1:]@np.linalg.inv(insUcov[1:,1:])@insUcov[1:,0:1]))
-                method__ = 0
-                if method__ == 0: # regression
-                    X = np.column_stack((np.ones((insU.shape[0],1)),insU[:,0:1]))
-                    Y = insU[:,1:]
-                    beta1 = np.linalg.solve(X.T@X,X.T@Y)[1,:]
-    #             beta_idv = insUcov[1:,0:1]@np.linalg.cholesky(insUcov[0:1,1:]@np.linalg.inv(insUcov[1:,1:])@insUcov[1:,0:1])
-    #             beta_idv = beta_idv[:]/sp[4]
-    #             print(beta_idv)
-    #             insUstd = np.std(insU,axis=0,ddof=1).reshape(-1,1)
-                if method__ == 1: # moments
-                    beta1 = insUcov[0,1:]
-                # normalize
-#                     print(beta1)
-                beta1 = beta1[:]/beta1[v]
-#                     print(beta1)
-    #             A0inv[:,v] = (insUcov[1:,0]/insUstd[0]).T # st. dev. of explained part
-    #             A0inv[:,v] = (insUcov[1:,0]/insUcov[v+1,0]).T # st. dev. of residual
-    #             A0inv[:,v] = (insUcov[1:,0]/(insUcov[v+1,0]/insUstd[v+1])).T # st. dev. of residual
-    #             A0inv[:,v] = A0inv[:,v]/A0inv[v,v] # unit
-                A0inv[:,v] = beta1.T
-        if method_ == 1:
-            nM = instruments.shape[1]
-            idv1 = []
-            for _ in idv:
-                idv1.append(_)
-            not_idv = []
-            for _ in range(nY):
-                in_idv = False
-                for _1 in idv:
-                    if _ == _1:
-                        inn = False
-                        break
-                if not in_idv:
-                    not_idv.append(_)
-            # print(not_idv)
-            # not_idv = np.array([_ for _ in range(nY) if _ not in idv])
-            # Reorder instrumented residuals first
-            U_ = np.full_like(U,np.nan)
-            for (iU_,iU) in enumerate([_ for _ in idv]+[_ for _ in not_idv]):
-                U_[iU_,:] = U[iU,:]
-            # U_ = np.row_stack((U[idv,:],U[not_idv,:]))
-#                 print(U_.shape)
-            A0inv = np.sqrt(np.diag(np.diag(S)))
-#                 A0inv = np.zeros((nY,nY))
-            # The formulas from Mertens & Ravn (2013) Appendix A
-            Suu = (1/nT)*(U_@U_.T)
-            Smu = (1/nT)*(instruments.T@U_.T)
-#                 print(Smu)
-            Smu1 = np.ascontiguousarray(Smu[:,:nM])
-            Smu2 = np.ascontiguousarray(Smu[:,nM:])
-            S11 = np.ascontiguousarray(Suu[:nM,:nM])
-            S21 = np.ascontiguousarray(Suu[nM:,:nM])
-            S22 = np.ascontiguousarray(Suu[nM:,nM:])
-            b21_b11_1 = np.ascontiguousarray((np.ascontiguousarray(np.linalg.inv(Smu1))@Smu2).T)
-            Z = b21_b11_1@S11@b21_b11_1.T-(S21@b21_b11_1.T+b21_b11_1@S21.T)+S22
-            b12_b12_T = (S21-b21_b11_1@S11).T@np.ascontiguousarray(np.linalg.inv(Z))@(S21-b21_b11_1@S11)
-            b22_b22_T = S22+b21_b11_1@(b12_b12_T-S11)@b21_b11_1.T
-            b12_b22_1 = (b12_b12_T@b21_b11_1.T+(S21-b21_b11_1@S11).T)@b22_b22_T
-            b11_b11_T = S11-b12_b12_T
-            S1_S1_T = (np.eye(nM)-b12_b22_1@b21_b11_1)@b11_b11_T@(np.eye(nM)-b12_b22_1@b21_b11_1).T
-            S1 = np.ascontiguousarray(np.linalg.cholesky(S1_S1_T))
-            b11_S1_1 = np.ascontiguousarray(np.linalg.inv(np.eye(nM)-b12_b22_1@b21_b11_1))
-            b21_S1_1 = b21_b11_1@np.ascontiguousarray(np.linalg.inv(np.eye(nM)-b12_b22_1@b21_b11_1))
-            b11 = b11_S1_1@S1
-            b21 = b21_S1_1@S1
-#                 print(b21_b11_1)
-#                 print(S1)
-#                 print(b11_S1_1,b21_S1_1)
-#                 print(b21_S1_1/b11_S1_1)
-#                 print(b21/b11)
-#                 print(b21)
-#                 print(idv)
-#                 print(not_idv)
-            for (ib,iA) in enumerate(idv):
-                for (jb,jA) in enumerate(idv):
-                    A0inv[iA,jA] = b11[ib,jb]
-            # A0inv[idv[:,None],idv] = b11
-#                 print(A0inv[idv,:][:,idv])
-            for (ib,iA) in enumerate(not_idv):
-                for (jb,jA) in enumerate(idv):
-                    A0inv[iA,jA] = b21[ib,jb]
-            # A0inv[not_idv[:,None],idv] = b21
-#                 print(A0inv)
-    return A0inv
-
-
-# In[39]:
-
-
-def get_sirf_from_irf(Psi,A0inv,impulse):
-    if impulse == 'unit':
-        impulse_scale = np.diag(1/np.diag(A0inv))
-    if impulse == '1sd':
-        impulse_scale = np.eye(nY)
-    if isinstance(impulse,list) or isinstance(impulse,np.ndarray):
-        impulse_scale = np.diag(impulse)*np.diag(1/np.diag(A0inv))
-    if isinstance(impulse,float):
-        impulse_scale = impulse*np.diag(1/np.diag(A0inv))
-    def get_ir(Psi,A0inv,impulse_scale):
-        Impact = A0inv@impulse_scale
-        ir = Psi@Impact
-        irc = np.cumsum(Psi@Impact,0)
-        return ir, irc
-    ir, irc = get_ir(Psi,A0inv,impulse_scale)
-    return ir, irc
-
-
-# In[40]:
-
-
-def bs_core(Y,c,B,U,S,Uinstruments,nL,nY,nH,nT,method='ch',impulse='unit',cl=None,ci=None,nR=1000,idv=None,instruments=None):
-    Y0_r = Y[:,:nL]
-    if ci == 'bs':
-        idx_r = np.random.choice(nT,size=nT)
-        rescale = np.ones((nT,1))
-        Uinstruments_r = rescale*Uinstruments[idx_r,:]
-    if ci == 'wbs':
-        bs_dist = 'Rademacher'
-        if bs_dist == 'Rademacher':
-            rescale = np.random.choice((-1,1),size=(nT,1))
-        if bs_dist == 'Normal':
-            rescale = np.random.normal(size=(nT,1))
-        Uinstruments_r = rescale*Uinstruments[:,:]
-    U_r = Uinstruments_r[:,:nY].T
-    instruments_r = Uinstruments_r[:,nY:]
-#     Y_r = varsim(c,B,U_r,Y0_r)
-    Y_r = varsim_njit(c,B,U_r,Y0_r)
-#     c_r_, B_r_, U_r_, S_r_ = varols(Y_r,nL)
-    c_r_, B_r_, U_r_, S_r_ = varols_njit(Y_r,nL)
-#     Psi_ = get_Psi_from_B(nL,nH,nY,B_r_)
-    Psi_ = get_Psi_from_B_njit(nL,nH,nY,B_r_)
-    A0inv_ = get_A0inv(method=method,U=U_r_,S=S_r_,idv=idv,instruments=instruments_r)
-    ir_,irc_ = get_sirf_from_irf(Psi_,A0inv_,impulse)
-    return ir_,irc_
-
-
-# In[41]:
-
-
-@nb.njit
-def bs_core_njit(Y,c,B,U,S,Uinstruments,nL,nY,nH,nT,method='ch',impulse='unit',cl=None,ci=None,nR=1000,idv=None,instruments=None):
-    Y0_r = Y[:,:nL]
-    if ci == 'bs':
-        idx_r = np.random.choice(nT,size=nT)
-        rescale = np.ones((nT,1))
-        Uinstruments_r = rescale*Uinstruments[idx_r,:]
-    if ci == 'wbs':
-        bs_dist = 'Rademacher'
-        if bs_dist == 'Rademacher':
-            rescale = np.random.choice((-1,1),size=(nT,1))
-        if bs_dist == 'Normal':
-            rescale = np.random.normal(size=(nT,1))
-        Uinstruments_r = rescale*Uinstruments[:,:]
-    U_r = Uinstruments_r[:,:nY].T
-    instruments_r = Uinstruments_r[:,nY:]
-#     Y_r = varsim(c,B,U_r,Y0_r)
-    Y_r = varsim_njit(c,B,U_r,Y0_r)
-#     c_r_, B_r_, U_r_, S_r_ = varols(Y_r,nL)
-    c_r_, B_r_, U_r_, S_r_ = varols_njit(Y_r,nL)
-#     Psi_ = get_Psi_from_B(nL,nH,nY,B_r_)
-    Psi_ = get_Psi_from_B_njit(nL,nH,nY,B_r_)
-    A0inv_ = get_A0inv_njit(method=method,U=U_r_,S=S_r_,idv=idv,instruments=instruments_r)
-    ir_,irc_ = get_sirf_from_irf(Psi_,A0inv_,impulse)
-    return ir_,irc_
-
-
-# In[42]:
-
-
-class varm:
-    
-    class dir:
+    class dir(object):
         def __init__(self):
             pass
         
@@ -742,8 +339,95 @@ class varm:
         self.model.svar = self.dir()
         self.irfs = self.dir()
         self.set_sample(sample)
+        
+    def varols(self,data,nL):
+        (n0,n1) = data.shape
+        nT = n0 - nL
+        nY = n1
+        Z = np.ones((1,n0))
+
+        for p in range(1,1+nL):
+            Z = np.row_stack((Z,np.roll(data.T,p)))
+
+        Z = Z[:,nL:]
+        Y = data.T[:,nL:]
+
+        cB = (Y@Z.T)@(np.linalg.inv(Z@Z.T))
+        c = cB[:,0]
+        B = cB[:,1:].T.reshape((nL,nY,nY)).swapaxes(1,2)
+        U = Y-cB@Z
+        S = (1/(nT-nL*nY-1))*(U@U.T)
+        return c, B, U, S
+
+    def varsim(self,c,B,U,Y0):
+        (nY,nT) = U.shape
+        (_,nL) = Y0.shape
+        Y = np.full(((nY,nL+nT)),np.nan)
+        Y[:,:nL] = Y0
+        
+        for t in range(nL,nL+nT):
+#             BB = B.swapaxes(1,2).reshape((nL*nY,nY)).T
+#             Y[:,t] = c + (BB@Y[:,t-nL:t][:,::-1].T.reshape((nL*nY,1))).reshape((-1,)) + U[:,t-nL]
+            Y_t = c + U[:,t-nL]
+            for l in range(nL):
+                Y_t += B[l]@Y[:,t-l-1]
+            Y[:,t] = Y_t
+        return Y
     
-    def bs(self,Y,c,B,U,S,method='ch',impulse='unit',cl=None,ci=None,nR=1000,idv=None,instruments=None):
+    def B2Psi(self,nL,nH,nY,B):
+        Psi = np.zeros((nH+1,nY,nY))
+        Psi[0] = np.eye(nY)
+        for h in range(1,nH+1):
+            for i in range(min(h,nL)):
+                Psi[h] += Psi[h-i-1]@B[i]
+        return Psi
+
+    def A0inv_ch(self,S):
+        return np.linalg.cholesky(S)
+    
+    def A0inv(self,method=None,U=None,S=None,idv=None,instruments=None):
+        if method == 'ch':
+            A0inv = np.linalg.cholesky(S)
+        if method == 'iv':
+            A0inv = np.sqrt(np.diag(np.diag(S)))
+            for v,ins in zip(idv,instruments.T):
+                insU = np.column_stack((ins.T,U.T))
+                insUnan = np.isnan(insU)
+                insU = insU[~insUnan.any(axis=1),:]
+                if insU.shape[0] < 10:
+                    raise ValueError('Not enough observations to perform SVAR-IV identification')
+    #             insUcov = np.cov(insU,rowvar=False)
+                insUcov = insU.T@insU
+
+    #             print((insUcov[0:1,1:]@np.linalg.inv(insUcov[1:,1:])@insUcov[1:,0:1]))
+                beta_idv = np.linalg.lstsq(np.column_stack((np.ones((insU.shape[0],1)),insU[:,0:1])),insU[:,1:],rcond=None)[0]
+                beta_idv = beta_idv[1,:]/beta_idv[1,v]
+    #             beta_idv = insUcov[1:,0:1]@np.linalg.cholesky(insUcov[0:1,1:]@np.linalg.inv(insUcov[1:,1:])@insUcov[1:,0:1])
+    #             beta_idv = beta_idv[:]/sp[4]
+    #             print(beta_idv)
+    #             insUstd = np.std(insU,axis=0,ddof=1).reshape(-1,1)
+    #             A0inv[:,v] = (insUcov[1:,0]/insUstd[0]).T # st. dev. of explained part
+    #             A0inv[:,v] = (insUcov[1:,0]/insUcov[v+1,0]).T # st. dev. of residual
+    #             A0inv[:,v] = (insUcov[1:,0]/(insUcov[v+1,0]/insUstd[v+1])).T # st. dev. of residual
+    #             A0inv[:,v] = A0inv[:,v]/A0inv[v,v] # unit
+                A0inv[:,v] = beta_idv.T
+        return A0inv
+
+    def irf2sirf(self,Psi,A0inv,impulse):
+        if impulse == 'unit':
+            impulse_scale = np.diag(1/np.diag(A0inv))
+        if impulse == '1sd':
+            impulse_scale = np.eye(nY)
+        if isinstance(impulse,list) or isinstance(impulse,np.ndarray):
+            impulse_scale = np.diag(impulse)*np.diag(1/np.diag(A0inv))
+        if isinstance(impulse,float):
+            impulse_scale = impulse*np.diag(1/np.diag(A0inv))
+        Impact = A0inv@impulse_scale
+        ir = Psi@Impact
+        irc = np.cumsum(Psi@Impact,0)
+        return ir, irc
+    
+    def bs(self,Y,c,B,U,S,method='ch',impulse='unit',idv=None,instruments=None,ci=None,nR=1000):
         nL = self.model.nL
         nY = self.model.nY
         nH = self.model.nH
@@ -754,52 +438,61 @@ class varm:
             instruments = [0 for _ in range(nT)]
         Uinstruments = np.column_stack((U.T,instruments))
         for r in range(nR):
-            if (r+1) % 100 == 0:
-                print('\r Bootstrap {}/{}'.format(r+1,nR), end='\r', flush=True)
-#             ir_,irc_ = bs_core(Y,c,B,U,S,Uinstruments,nL,nY,nH,nT,method=method,impulse=impulse,cl=cl,ci=ci,nR=nR,idv=idv,instruments=instruments)
-            ir_,irc_ = bs_core(Y,c,B,U,S,Uinstruments,nL,nY,nH,nT,method=method,impulse=impulse,cl=cl,ci=ci,nR=nR,idv=idv,instruments=instruments)
+            print('\r Bootstrap {}/{}'.format(r+1,nR), end='\r', flush=True)
+            Y0_r = Y[:,:nL]
+            if ci == 'bs':
+                idx_r = np.random.choice(nT,size=nT)
+                rescale = np.ones((nT,1))
+                Uinstruments_r = rescale*Uinstruments[idx_r,:]
+            if ci == 'wbs':
+                bs_dist = 'Rademacher'
+                if bs_dist == 'Rademacher':
+                    rescale = 1-2*np.round(np.random.uniform(size=(nT,1)))
+                if bs_dist == 'Normal':
+                    rescale = np.random.normal(size=(nT,1))
+                Uinstruments_r = rescale*Uinstruments[:,:]
+            U_r = Uinstruments_r[:,:nY].T
+            instruments_r = Uinstruments_r[:,nY:]
+            Y_r = self.varsim(c,B,U_r,Y0_r)
+            c_r_, B_r_, U_r_, S_r_ = self.varols(Y_r.T,nL)
+            Psi_ = self.B2Psi(nL,nH,nY,B_r_)
+            A0inv_ = self.A0inv(method=method,U=U_r_,S=S_r_,idv=idv,instruments=instruments_r)
+            ir_,irc_ = self.irf2sirf(Psi_,A0inv_,impulse)
             IR[r],IRC[r] = ir_,irc_
         print(end='\n')
-#         Psi = get_Psi_from_B(nL,nH,nY,B)
-        Psi = get_Psi_from_B_njit(nL,nH,nY,B)
-        A0inv = get_A0inv(method=method,U=U,S=S,idv=idv,instruments=instruments)
-        irm,irmc = get_sirf_from_irf(Psi,A0inv,impulse)
+        Psi = self.B2Psi(nL,nH,nY,B)
+        A0inv = self.A0inv(method=method,U=U,S=S,idv=idv,instruments=instruments)
+        irm,irmc = self.irf2sirf(Psi,A0inv,impulse)
         ir = self.dir()
         irc = self.dir()
         ir.mean = irm
         irc.mean = irmc
-        # ir.q500 = np.quantile(IR, 0.500, axis=0)
-        # irc.q500 = np.quantile(IRC, 0.500, axis=0)
-        if 0.99 in cl:
-            ir.q005 = np.quantile(IR, 0.005, axis=0)
-            ir.q995 = np.quantile(IR, 0.995, axis=0)
-            irc.q005 = np.quantile(IRC, 0.005, axis=0)
-            irc.q995 = np.quantile(IRC, 0.995, axis=0)
-        if 0.95 in cl:
-            ir.q025 = np.quantile(IR, 0.025, axis=0)
-            ir.q975 = np.quantile(IR, 0.975, axis=0)
-            irc.q025 = np.quantile(IRC, 0.025, axis=0)
-            irc.q975 = np.quantile(IRC, 0.975, axis=0)
-        if 0.90 in cl:
-            ir.q050 = np.quantile(IR, 0.050, axis=0)
-            ir.q950 = np.quantile(IR, 0.950, axis=0)
-            irc.q050 = np.quantile(IRC, 0.050, axis=0)
-            irc.q950 = np.quantile(IRC, 0.950, axis=0)
-        if 0.80 in cl:
-            ir.q100 = np.quantile(IR, 0.100, axis=0)
-            ir.q900 = np.quantile(IR, 0.900, axis=0)
-            irc.q100 = np.quantile(IRC, 0.100, axis=0)
-            irc.q900 = np.quantile(IRC, 0.900, axis=0)
-        if 0.68 in cl:
-            ir.q160 = np.quantile(IR, 0.160, axis=0)
-            ir.q840 = np.quantile(IR, 0.840, axis=0)
-            irc.q160 = np.quantile(IRC, 0.160, axis=0)
-            irc.q840 = np.quantile(IRC, 0.840, axis=0)
-        if 0.50 in cl:
-            ir.q250 = np.quantile(IR, 0.250, axis=0)
-            ir.q750 = np.quantile(IR, 0.750, axis=0)
-            irc.q250 = np.quantile(IRC, 0.250, axis=0)
-            irc.q750 = np.quantile(IRC, 0.750, axis=0)
+        ir.q005 = np.quantile(IR, 0.005, axis=0)
+        ir.q025 = np.quantile(IR, 0.025, axis=0)
+        ir.q050 = np.quantile(IR, 0.050, axis=0)
+        ir.q100 = np.quantile(IR, 0.100, axis=0)
+        ir.q160 = np.quantile(IR, 0.160, axis=0)
+        ir.q250 = np.quantile(IR, 0.250, axis=0)
+        ir.q500 = np.quantile(IR, 0.500, axis=0)
+        ir.q750 = np.quantile(IR, 0.750, axis=0)
+        ir.q840 = np.quantile(IR, 0.840, axis=0)
+        ir.q900 = np.quantile(IR, 0.900, axis=0)
+        ir.q950 = np.quantile(IR, 0.950, axis=0)
+        ir.q975 = np.quantile(IR, 0.975, axis=0)
+        ir.q995 = np.quantile(IR, 0.995, axis=0)
+        irc.q005 = np.quantile(IRC, 0.005, axis=0)
+        irc.q025 = np.quantile(IRC, 0.025, axis=0)
+        irc.q050 = np.quantile(IRC, 0.050, axis=0)
+        irc.q100 = np.quantile(IRC, 0.100, axis=0)
+        irc.q160 = np.quantile(IRC, 0.160, axis=0)
+        irc.q250 = np.quantile(IRC, 0.250, axis=0)
+        irc.q500 = np.quantile(IRC, 0.500, axis=0)
+        irc.q750 = np.quantile(IRC, 0.750, axis=0)
+        irc.q840 = np.quantile(IRC, 0.840, axis=0)
+        irc.q900 = np.quantile(IRC, 0.900, axis=0)
+        irc.q950 = np.quantile(IRC, 0.950, axis=0)
+        irc.q975 = np.quantile(IRC, 0.975, axis=0)
+        irc.q995 = np.quantile(IRC, 0.995, axis=0)
         return ir,irc,Psi,A0inv
         
     def fit(self):
@@ -809,8 +502,7 @@ class varm:
         var_names = self.model.var_names
         data = self.data[var_names].iloc[isample[0]-nL:isample[1]+1,:].values
         
-#         c, B, U, S = varols(data.T,nL)
-        c, B, U, S = varols_njit(data.T,nL)
+        c, B, U, S = self.varols(data,nL)
 
         self.model.parameters = self.dir()
         self.model.parameters.c = c
@@ -824,7 +516,7 @@ class varm:
         if hasattr(self.model.svar,'iv'):
             self.irf(method='iv')
 
-    def irf(self,nH=None,method='ch',impulse='unit',cl=None,ci=None,nR=1000,idv=None,ins_names=None):
+    def irf(self,nH=None,method='ch',impulse='unit',ci=None,nR=1000,idv=None,ins_names=None):
         
         if nH is None:
             if hasattr(self.model,'nH'):
@@ -838,15 +530,6 @@ class varm:
             else:
                 ci = None
         
-        if cl is None:
-            if hasattr(self.model,'cl'):
-                cl = self.model.cl
-            else:
-                cl = 0.95
-                
-        if type(cl) is float:
-            cl = [cl]
-            
         self.model.nH = nH
         self.model.impulse = impulse
         
@@ -865,20 +548,18 @@ class varm:
         if method == 'ch':
             
             if ci is None:
-#                 Psi = get_Psi_from_B(nL,nH,nY,B)
-                Psi = get_Psi_from_B_njit(nL,nH,nY,B)
-                A0inv = get_A0inv(method=method,S=S)
-                irm,irmc = get_sirf_from_irf(Psi,A0inv,impulse)
+                Psi = self.B2Psi(nL,nH,nY,B)
+                A0inv = self.A0inv(method=method,S=S)
+                irm,irmc = self.irf2sirf(Psi,A0inv,impulse)
                 ir = self.dir()
                 ir.mean = irm
                 irc = self.dir()
                 irc.mean = irmc
             if ci == 'bs' or ci == 'wbs':
-                ir,irc,Psi,A0inv = self.bs(Y,c,B,U,S,method=method,impulse=impulse,cl=cl,ci=ci,nR=nR,idv=None,instruments=None)
+                ir,irc,Psi,A0inv = self.bs(Y,c,B,U,S,method=method,impulse=impulse,idv=None,instruments=None,ci=ci,nR=nR)
                 self.model.nR = nR
                 self.model.ci = ci
-                self.model.cl = cl
-
+            
             self.irfs.ch = self.dir()
             self.irfs.ch.ir = ir
             self.irfs.ch.irc = irc
@@ -899,29 +580,31 @@ class varm:
                     raise SyntaxError('Please provide an instrument for SVAR-IV identification')
             else:
                 if type(idv) == int:
-                    idv = [idv]
-                if type(ins_names) == str:
-                    ins_names = [ins_names]
-            if len(idv) != len(ins_names):
+                    idv = np.array([idv])
+                if type(idv) == list:
+                    idv = np.array(idv)
+            if type(ins_names) == str:
+                ins_names = [ins_names]
+            if type(ins_names) == list:
+                pass
+            if idv.shape[0] != len(ins_names):
                 raise SyntaxError('The number of instruments must be equal the number of instrumented variables')
             
             instruments = self.data[ins_names].iloc[isample[0]:isample[1]+1,:].values
 
             if ci is None:
-#                 Psi = get_Psi_from_B(nL,nH,nY,B)
-                Psi = get_Psi_from_B_njit(nL,nH,nY,B)
-                A0inv = get_A0inv(method=method,U=U,S=S,idv=idv,instruments=instruments)
-                irm,irmc = get_sirf_from_irf(Psi,A0inv,impulse)
+                Psi = self.B2Psi(nL,nH,nY,B)
+                A0inv = self.A0inv(method=method,U=U,S=S,idv=idv,instruments=instruments)
+                irm,irmc = self.irf2sirf(Psi,A0inv,impulse)
                 ir = self.dir()
                 ir.mean = irm
                 irc = self.dir()
                 irc.mean = irmc
             if ci == 'bs' or ci == 'wbs':
-                ir,irc,Psi,A0inv = self.bs(Y,c,B,U,S,method=method,impulse=impulse,cl=cl,ci=ci,nR=nR,idv=idv,instruments=instruments)
+                ir,irc,Psi,A0inv = self.bs(Y,c,B,U,S,method=method,impulse=impulse,idv=idv,instruments=instruments,ci=ci,nR=nR)
                 self.model.nR = nR
                 self.model.ci = ci
-                self.model.cl = cl
-
+        
             self.irfs.iv = self.dir()
             self.irfs.iv.ir = ir
             self.irfs.iv.irc = irc
@@ -989,28 +672,15 @@ class varm:
             self.irf(nH=nH,method='iv')
 
 
-# MM = varm(data,var_names=['0','1','2'],nL=4)
+# MM = varm(B,var_names=['0','1','2'],nL=4)
 # MM.irf(method='iv',ci='bs',idv=2,ins_names='4')
-
-# MM = varm(data,var_names=['0','1','3','2','4','5'],nL=4)
-# MM.irf(method='iv',ci='wbs',nR=100,idv=[1],ins_names=['6'])
-
-# %load_ext line_profiler
-
-# %lprun -f varm.bs varm(data,var_names=['0','1','3','2','4','5'],nL=4).irf(method='iv',ci='wbs',nR=1000,idv=[1],ins_names=['6'])
-
-# print(MM. model.parameters.B[0])
-
-# print(MM. model.parameters.B[0])
-
-# print(MM. model.parameters.B[0])
 
 # In[311]:
 
 
-class lpm:
+class lpm(object):
     
-    class dir:
+    class dir(object):
         def __init__(self):
             pass
         
@@ -1142,7 +812,7 @@ class lpm:
         self.irfs.rd = Psi
         self.irfs.rdc = np.cumsum(Psi,0)
         
-        def get_sirf_from_irf(Psi,A0inv,impulse):
+        def irf2sirf(Psi,A0inv,impulse):
             if impulse == 'unit':
                 impulse_scale = np.diag(1/np.diag(A0inv))
             if impulse == '1sd':
@@ -1154,7 +824,7 @@ class lpm:
             
         if method == 'ch':
             A0inv = np.linalg.cholesky(S)
-            ir,irc = get_sirf_from_irf(Psi,A0inv,impulse)
+            ir,irc = irf2sirf(Psi,A0inv,impulse)
             self.irfs.ch = ir
             self.irfs.chc = irc
             self.model.parameters.A0inv.ch = A0inv
@@ -1198,7 +868,7 @@ class lpm:
 #                 A0inv[:,v] = (insUcov[1:,0]/insUstd[0]).T # st. dev. of explained part
                 A0inv[:,v] = (insUcov[1:,0]/(insUcov[v+1,0]/insUstd[v+1])).T # st. dev. of residual
 #                 A0inv[:,v] = A0inv[:,v]/A0inv[v,v] # unit
-            ir,irc = get_sirf_from_irf(Psi,A0inv,impulse)
+            ir,irc = irf2sirf(Psi,A0inv,impulse)
             self.irfs.iv = ir
             self.irfs.ivc = irc
             self.model.parameters.A0inv.iv = A0inv
@@ -1276,7 +946,7 @@ class lpm:
 # In[211]:
 
 
-class sfm:
+class sfm(object):
     def __init__(self,data,tcodes,nF=None,make_fig=False):
         
         if isinstance(data,pd.DataFrame):
@@ -1350,8 +1020,7 @@ class sfm:
     def getFactors(self,X,nF=None,make_fig=False):
         (nT,nN) = X.shape
         S_xx = (1/nT)*(X.T@X)
-        eigVal, eigVec = np.linalg.eigh(S_xx)
-        # sort eigenvalues in descending order
+        eigVal, eigVec = np.linalg.eig(S_xx)
         idx = np.argsort(eigVal)[::-1]
         eigVal = eigVal[idx]
         eigVec = eigVec[:,idx]
