@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[50]:
+# In[1]:
 
 
 import numpy as np
@@ -308,7 +308,7 @@ class varms:
             self.iv.ins_names = ins_names
 
 
-# In[76]:
+# In[3]:
 
 
 def varols(data,nL):
@@ -332,7 +332,7 @@ def varols(data,nL):
     return c, B, U, S
 
 
-# In[96]:
+# In[4]:
 
 
 @nb.njit
@@ -359,7 +359,7 @@ def varols_njit(data,nL):
     return c, B, U, S
 
 
-# In[33]:
+# In[5]:
 
 
 def varsim(c,B,U,Y0):
@@ -381,7 +381,7 @@ def varsim(c,B,U,Y0):
     return Y
 
 
-# In[34]:
+# In[6]:
 
 
 @nb.njit
@@ -404,7 +404,7 @@ def varsim_njit(c,B,U,Y0):
     return Y
 
 
-# In[35]:
+# In[7]:
 
 
 def get_Psi_from_B(nL,nH,nY,B):
@@ -416,7 +416,7 @@ def get_Psi_from_B(nL,nH,nY,B):
     return Psi
 
 
-# In[36]:
+# In[8]:
 
 
 @nb.njit
@@ -429,10 +429,10 @@ def get_Psi_from_B_njit(nL,nH,nY,B):
     return Psi
 
 
-# In[37]:
+# In[9]:
 
 
-def get_A0inv(method=None,U=None,S=None,idv=None,instruments=None):
+def get_A0inv(method=None,U=None,S=None,idv=None,M=None):
     if method == 'ch':
         A0inv = np.linalg.cholesky(S)
     if method == 'iv':
@@ -441,7 +441,7 @@ def get_A0inv(method=None,U=None,S=None,idv=None,instruments=None):
         if method_ == 0:
             A0inv = np.sqrt(np.diag(np.diag(S)))
 #                 A0inv = np.zeros(S.shape)
-            for v,ins in zip(idv,instruments.T):
+            for v,ins in zip(idv,M):
                 insU = np.column_stack((ins.T,U.T))
                 insUnan = np.isnan(insU)
                 insU = insU[~insUnan.any(axis=1),:]
@@ -474,7 +474,7 @@ def get_A0inv(method=None,U=None,S=None,idv=None,instruments=None):
     #             A0inv[:,v] = A0inv[:,v]/A0inv[v,v] # unit
                 A0inv[:,v] = beta1.T
         if method_ == 1:
-            nM = instruments.shape[1]
+            nM = M.shape[0]
             not_idv = np.array([_ for _ in range(nY) if _ not in idv])
             # Reorder instrumented residuals first
             U_ = np.row_stack((U[idv,:],U[not_idv,:]))
@@ -483,7 +483,7 @@ def get_A0inv(method=None,U=None,S=None,idv=None,instruments=None):
 #                 A0inv = np.zeros((nY,nY))
             # The formulas from Mertens & Ravn (2013) Appendix A
             Suu = (1/nT)*(U_@U_.T)
-            Smu = (1/nT)*(instruments.T@U_.T)
+            Smu = (1/nT)*(M@U_.T)
 #                 print(Smu)
             Smu1 = Smu[:,:nM]
             Smu2 = Smu[:,nM:]
@@ -519,11 +519,11 @@ def get_A0inv(method=None,U=None,S=None,idv=None,instruments=None):
     return A0inv
 
 
-# In[38]:
+# In[10]:
 
 
 @nb.njit
-def get_A0inv_njit(method=None,U=None,S=None,idv=None,instruments=None):
+def get_A0inv_njit(method=None,U=None,S=None,idv=None,M=None):
     if method == 'ch':
         A0inv = np.linalg.cholesky(S)
     if method == 'iv':
@@ -532,7 +532,7 @@ def get_A0inv_njit(method=None,U=None,S=None,idv=None,instruments=None):
         if method_ == 0:
             A0inv = np.sqrt(np.diag(np.diag(S)))
 #                 A0inv = np.zeros(S.shape)
-            for v,ins in zip(idv,instruments.T):
+            for v,ins in zip(idv,M):
                 insU = np.column_stack((ins.T,U.T))
                 insUnan = np.isnan(insU)
                 insU = insU[~insUnan.any(axis=1),:]
@@ -565,7 +565,7 @@ def get_A0inv_njit(method=None,U=None,S=None,idv=None,instruments=None):
     #             A0inv[:,v] = A0inv[:,v]/A0inv[v,v] # unit
                 A0inv[:,v] = beta1.T
         if method_ == 1:
-            nM = instruments.shape[1]
+            nM = M.shape[0]
             idv1 = []
             for _ in idv:
                 idv1.append(_)
@@ -590,7 +590,7 @@ def get_A0inv_njit(method=None,U=None,S=None,idv=None,instruments=None):
 #                 A0inv = np.zeros((nY,nY))
             # The formulas from Mertens & Ravn (2013) Appendix A
             Suu = (1/nT)*(U_@U_.T)
-            Smu = (1/nT)*(instruments.T@U_.T)
+            Smu = (1/nT)*(M@U_.T)
 #                 print(Smu)
             Smu1 = np.ascontiguousarray(Smu[:,:nM])
             Smu2 = np.ascontiguousarray(Smu[:,nM:])
@@ -630,7 +630,7 @@ def get_A0inv_njit(method=None,U=None,S=None,idv=None,instruments=None):
     return A0inv
 
 
-# In[39]:
+# In[11]:
 
 
 def get_sirf_from_irf(Psi,A0inv,impulse):
@@ -651,66 +651,66 @@ def get_sirf_from_irf(Psi,A0inv,impulse):
     return ir, irc
 
 
-# In[40]:
+# In[16]:
 
 
-def bs_core(Y,c,B,U,S,Uinstruments,nL,nY,nH,nT,method='ch',impulse='unit',cl=None,ci=None,nR=1000,idv=None,instruments=None):
+def bs_core(Y,c,B,U,S,UM,nL,nY,nH,nT,method='ch',impulse='unit',cl=None,ci=None,nR=1000,idv=None,M=None):
     Y0_r = Y[:,:nL]
     if ci == 'bs':
         idx_r = np.random.choice(nT,size=nT)
-        rescale = np.ones((nT,1))
-        Uinstruments_r = rescale*Uinstruments[idx_r,:]
+        rescale = np.ones((1,nT))
+        UM_r = UM[:,idx_r]*rescale
     if ci == 'wbs':
         bs_dist = 'Rademacher'
         if bs_dist == 'Rademacher':
-            rescale = np.random.choice((-1,1),size=(nT,1))
+            rescale = np.random.choice((-1,1),size=(1,nT))
         if bs_dist == 'Normal':
-            rescale = np.random.normal(size=(nT,1))
-        Uinstruments_r = rescale*Uinstruments[:,:]
-    U_r = Uinstruments_r[:,:nY].T
-    instruments_r = Uinstruments_r[:,nY:]
+            rescale = np.random.normal(size=(1,nT))
+        UM_r = UM[:,:]*rescale
+    U_r = UM_r[:nY,:]
+    M_r = UM_r[nY:,:]
 #     Y_r = varsim(c,B,U_r,Y0_r)
     Y_r = varsim_njit(c,B,U_r,Y0_r)
 #     c_r_, B_r_, U_r_, S_r_ = varols(Y_r,nL)
     c_r_, B_r_, U_r_, S_r_ = varols_njit(Y_r,nL)
 #     Psi_ = get_Psi_from_B(nL,nH,nY,B_r_)
     Psi_ = get_Psi_from_B_njit(nL,nH,nY,B_r_)
-    A0inv_ = get_A0inv(method=method,U=U_r_,S=S_r_,idv=idv,instruments=instruments_r)
+    A0inv_ = get_A0inv(method=method,U=U_r_,S=S_r_,idv=idv,M=M_r)
     ir_,irc_ = get_sirf_from_irf(Psi_,A0inv_,impulse)
     return ir_,irc_
 
 
-# In[41]:
+# In[17]:
 
 
 @nb.njit
-def bs_core_njit(Y,c,B,U,S,Uinstruments,nL,nY,nH,nT,method='ch',impulse='unit',cl=None,ci=None,nR=1000,idv=None,instruments=None):
+def bs_core_njit(Y,c,B,U,S,UM,nL,nY,nH,nT,method='ch',impulse='unit',cl=None,ci=None,nR=1000,idv=None,M=None):
     Y0_r = Y[:,:nL]
     if ci == 'bs':
         idx_r = np.random.choice(nT,size=nT)
-        rescale = np.ones((nT,1))
-        Uinstruments_r = rescale*Uinstruments[idx_r,:]
+        rescale = np.ones((1,nT))
+        UM_r = UM[:,idx_r]*rescale
     if ci == 'wbs':
         bs_dist = 'Rademacher'
         if bs_dist == 'Rademacher':
-            rescale = np.random.choice((-1,1),size=(nT,1))
+            rescale = np.random.choice((-1,1),size=(1,nT))
         if bs_dist == 'Normal':
-            rescale = np.random.normal(size=(nT,1))
-        Uinstruments_r = rescale*Uinstruments[:,:]
-    U_r = Uinstruments_r[:,:nY].T
-    instruments_r = Uinstruments_r[:,nY:]
+            rescale = np.random.normal(size=(1,nT))
+        UM_r = UM[:,:]*rescale
+    U_r = UM_r[:nY,:]
+    M_r = UM_r[nY:,:]
 #     Y_r = varsim(c,B,U_r,Y0_r)
     Y_r = varsim_njit(c,B,U_r,Y0_r)
 #     c_r_, B_r_, U_r_, S_r_ = varols(Y_r,nL)
     c_r_, B_r_, U_r_, S_r_ = varols_njit(Y_r,nL)
 #     Psi_ = get_Psi_from_B(nL,nH,nY,B_r_)
     Psi_ = get_Psi_from_B_njit(nL,nH,nY,B_r_)
-    A0inv_ = get_A0inv_njit(method=method,U=U_r_,S=S_r_,idv=idv,instruments=instruments_r)
+    A0inv_ = get_A0inv_njit(method=method,U=U_r_,S=S_r_,idv=idv,M=M_r)
     ir_,irc_ = get_sirf_from_irf(Psi_,A0inv_,impulse)
     return ir_,irc_
 
 
-# In[42]:
+# In[18]:
 
 
 class varm:
@@ -743,7 +743,7 @@ class varm:
         self.irfs = self.dir()
         self.set_sample(sample)
     
-    def bs(self,Y,c,B,U,S,method='ch',impulse='unit',cl=None,ci=None,nR=1000,idv=None,instruments=None):
+    def bs(self,Y,c,B,U,S,method='ch',impulse='unit',cl=None,ci=None,nR=1000,idv=None,M=None):
         nL = self.model.nL
         nY = self.model.nY
         nH = self.model.nH
@@ -751,18 +751,18 @@ class varm:
         IR = np.full((nR,nH+1,nY,nY),np.nan)
         IRC = np.full((nR,nH+1,nY,nY),np.nan)
         if method == 'ch':
-            instruments = [0 for _ in range(nT)]
-        Uinstruments = np.column_stack((U.T,instruments))
+            M = [0 for _ in range(nT)]
+        UM = np.row_stack((U, M))
         for r in range(nR):
             if (r+1) % 100 == 0:
                 print('\r Bootstrap {}/{}'.format(r+1,nR), end='\r', flush=True)
-#             ir_,irc_ = bs_core(Y,c,B,U,S,Uinstruments,nL,nY,nH,nT,method=method,impulse=impulse,cl=cl,ci=ci,nR=nR,idv=idv,instruments=instruments)
-            ir_,irc_ = bs_core(Y,c,B,U,S,Uinstruments,nL,nY,nH,nT,method=method,impulse=impulse,cl=cl,ci=ci,nR=nR,idv=idv,instruments=instruments)
+#             ir_,irc_ = bs_core(Y,c,B,U,S,UM,nL,nY,nH,nT,method=method,impulse=impulse,cl=cl,ci=ci,nR=nR,idv=idv,M=M)
+            ir_,irc_ = bs_core(Y,c,B,U,S,UM,nL,nY,nH,nT,method=method,impulse=impulse,cl=cl,ci=ci,nR=nR,idv=idv,M=M)
             IR[r],IRC[r] = ir_,irc_
         print(end='\n')
 #         Psi = get_Psi_from_B(nL,nH,nY,B)
         Psi = get_Psi_from_B_njit(nL,nH,nY,B)
-        A0inv = get_A0inv(method=method,U=U,S=S,idv=idv,instruments=instruments)
+        A0inv = get_A0inv(method=method,U=U,S=S,idv=idv,M=M)
         irm,irmc = get_sirf_from_irf(Psi,A0inv,impulse)
         ir = self.dir()
         irc = self.dir()
@@ -874,7 +874,7 @@ class varm:
                 irc = self.dir()
                 irc.mean = irmc
             if ci == 'bs' or ci == 'wbs':
-                ir,irc,Psi,A0inv = self.bs(Y,c,B,U,S,method=method,impulse=impulse,cl=cl,ci=ci,nR=nR,idv=None,instruments=None)
+                ir,irc,Psi,A0inv = self.bs(Y,c,B,U,S,method=method,impulse=impulse,cl=cl,ci=ci,nR=nR,idv=None,M=None)
                 self.model.nR = nR
                 self.model.ci = ci
                 self.model.cl = cl
@@ -906,18 +906,26 @@ class varm:
                 raise SyntaxError('The number of instruments must be equal the number of instrumented variables')
             
             instruments = self.data[ins_names].iloc[isample[0]:isample[1]+1,:].values
+            M = instruments.T
+            (nM,_) = M.shape
+            self.model.svar.iv = self.dir()
+            self.model.svar.iv.idv = idv
+            self.model.svar.iv.ins_names = ins_names
+            self.model.svar.iv.impulse = impulse
+            self.model.svar.iv.M = M
+            self.model.svar.iv.nM = nM
 
             if ci is None:
 #                 Psi = get_Psi_from_B(nL,nH,nY,B)
                 Psi = get_Psi_from_B_njit(nL,nH,nY,B)
-                A0inv = get_A0inv(method=method,U=U,S=S,idv=idv,instruments=instruments)
+                A0inv = get_A0inv(method=method,U=U,S=S,idv=idv,M=M)
                 irm,irmc = get_sirf_from_irf(Psi,A0inv,impulse)
                 ir = self.dir()
                 ir.mean = irm
                 irc = self.dir()
                 irc.mean = irmc
             if ci == 'bs' or ci == 'wbs':
-                ir,irc,Psi,A0inv = self.bs(Y,c,B,U,S,method=method,impulse=impulse,cl=cl,ci=ci,nR=nR,idv=idv,instruments=instruments)
+                ir,irc,Psi,A0inv = self.bs(Y,c,B,U,S,method=method,impulse=impulse,cl=cl,ci=ci,nR=nR,idv=idv,M=M)
                 self.model.nR = nR
                 self.model.ci = ci
                 self.model.cl = cl
@@ -926,10 +934,6 @@ class varm:
             self.irfs.iv.ir = ir
             self.irfs.iv.irc = irc
             self.model.parameters.A0inv.iv = A0inv
-            self.model.svar.iv = self.dir()
-            self.model.svar.iv.idv = idv
-            self.model.svar.iv.ins_names = ins_names
-            self.model.svar.iv.impulse = impulse
         self.irfs.rd = self.dir()
         self.irfs.rd.ir = Psi
         self.irfs.rd.irc = np.cumsum(Psi,0)
@@ -999,7 +1003,7 @@ class varm:
 
 # %lprun -f varm.bs varm(data,var_names=['0','1','3','2','4','5'],nL=4).irf(method='iv',ci='wbs',nR=1000,idv=[1],ins_names=['6'])
 
-# print(MM. model.parameters.B[0])
+# print(MM.model.parameters.B[0])
 
 # print(MM. model.parameters.B[0])
 
