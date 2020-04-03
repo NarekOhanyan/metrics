@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[211]:
+# In[2]:
 
 
 import numpy as np
@@ -13,7 +13,7 @@ import matplotlib.pyplot as mpl
 # a = np.random.random((100,3))
 # data = np.random.random((1000,10))
 
-# In[212]:
+# In[4]:
 
 
 class block:
@@ -21,7 +21,7 @@ class block:
         pass
 
 
-# In[213]:
+# In[5]:
 
 
 def ols(yin,Xin,dfcin=True):
@@ -126,7 +126,7 @@ def ols(yin,Xin,dfcin=True):
     return b,se,V,e,S
 
 
-# In[214]:
+# In[6]:
 
 
 # df = pd.read_csv('testdata.csv')
@@ -134,7 +134,7 @@ def ols(yin,Xin,dfcin=True):
 
 # b,se,V,e,S = ols(df.values[:,0:3],df.values[:,3:13])
 
-# In[215]:
+# In[7]:
 
 
 # S
@@ -147,7 +147,7 @@ def ols(yin,Xin,dfcin=True):
 # func(a)
 # print(a)
 
-# In[216]:
+# In[8]:
 
 
 class nsm:
@@ -225,7 +225,7 @@ class nsm:
 #     betas,_,_ = ols(yields,X)
 #     return betas
 
-# In[217]:
+# In[9]:
 
 
 class varms:
@@ -316,7 +316,7 @@ class varms:
             self.iv.ins_names = ins_names
 
 
-# In[218]:
+# In[10]:
 
 
 def varols(data,nL):
@@ -343,7 +343,7 @@ def varols(data,nL):
     return c, B, U, S
 
 
-# In[219]:
+# In[11]:
 
 
 @nb.njit
@@ -373,7 +373,7 @@ def varols_njit(data,nL):
     return c, B, U, S
 
 
-# In[220]:
+# In[12]:
 
 
 def varsim(c,B,U,Y0):
@@ -395,7 +395,7 @@ def varsim(c,B,U,Y0):
     return Y
 
 
-# In[221]:
+# In[13]:
 
 
 @nb.njit
@@ -418,7 +418,7 @@ def varsim_njit(c,B,U,Y0):
     return Y
 
 
-# In[222]:
+# In[14]:
 
 
 def get_Psi_from_B(B,nH):
@@ -431,7 +431,7 @@ def get_Psi_from_B(B,nH):
     return Psi
 
 
-# In[223]:
+# In[15]:
 
 
 @nb.njit
@@ -445,7 +445,7 @@ def get_Psi_from_B_njit(B,nH):
     return Psi
 
 
-# In[234]:
+# In[168]:
 
 
 def get_A0inv(method=None,U=None,S=None,idv=None,M=None):
@@ -495,31 +495,13 @@ def get_A0inv(method=None,U=None,S=None,idv=None,M=None):
             # Reorder instrumented residuals first
             U_ = np.row_stack((U[idv,:],U[not_idv,:]))
             MU = np.row_stack((M,U_))
+            # Remove time periods with nans
             MU_nan = np.isnan(MU)
             MU = MU[:,~MU_nan.any(axis=0)]
             if MU.shape[1] < 10:
                 raise ValueError('Not enough observations to perform SVAR-IV identification')
-            # The formulas from Mertens & Ravn (2013) Appendix A
-            S_mumu = (1/MU.shape[1])*(MU@MU.T)
-            S_uu = S_mumu[nM:,nM:]
-            S_mu = S_mumu[:nM,nM:]
-            S_mu1 = S_mu[:,:nM]
-            S_mu2 = S_mu[:,nM:]
-            S11 = S_uu[:nM,:nM]
-            S21 = S_uu[nM:,:nM]
-            S22 = S_uu[nM:,nM:]
-            b21_b11_1 = (np.linalg.inv(S_mu1)@S_mu2).T
-            Z = b21_b11_1@S11@b21_b11_1.T-(S21@b21_b11_1.T+b21_b11_1@S21.T)+S22
-            b12_b12_T = (S21-b21_b11_1@S11).T@np.linalg.inv(Z)@(S21-b21_b11_1@S11)
-            b22_b22_T = S22+b21_b11_1@(b12_b12_T-S11)@b21_b11_1.T
-            b12_b22_1 = (b12_b12_T@b21_b11_1.T+(S21-b21_b11_1@S11).T)@b22_b22_T
-            b11_b11_T = S11-b12_b12_T
-            S1_S1_T = (np.eye(nM)-b12_b22_1@b21_b11_1)@b11_b11_T@(np.eye(nM)-b12_b22_1@b21_b11_1).T
-            S1 = np.linalg.cholesky(S1_S1_T)
-            b11_S1_1 = np.linalg.inv(np.eye(nM)-b12_b22_1@b21_b11_1)
-            b21_S1_1 = b21_b11_1@np.linalg.inv(np.eye(nM)-b12_b22_1@b21_b11_1)
-            b11 = b11_S1_1@S1
-            b21 = b21_S1_1@S1
+            
+            b11,b21 = iv_block_njit(MU,nM)
 
             idv_array = np.array(idv)
             not_idv_array = np.array(not_idv)
@@ -530,51 +512,50 @@ def get_A0inv(method=None,U=None,S=None,idv=None,M=None):
     return A0inv
 
 
-# In[225]:
+# In[169]:
 
 
 @nb.njit # not used
 def get_A0inv_njit(method=None,U=None,S=None,idv=None,M=None):
+    (nY,nT) = U.shape
+    if method == None:
+        A0inv = np.eye(nY)
     if method == 'ch':
         A0inv = np.linalg.cholesky(S)
     if method == 'iv':
-        (nY,nT) = U.shape
-        method_ = 0
+        method_ = 1
+        A0inv = np.sqrt(np.diag(np.diag(S)))
+#         A0inv = np.zeros((nY,nY))
         if method_ == 0:
-            A0inv = np.sqrt(np.diag(np.diag(S)))
-#                 A0inv = np.zeros(S.shape)
-            for v,ins in zip(idv,M):
-                insU = np.column_stack((ins.T,U.T))
-                insUnan = np.isnan(insU)
-                insU = insU[~insUnan.any(axis=1),:]
-                if insU.shape[0] < 10:
+            for v,m in zip(idv,M):
+                mU = np.row_stack((m,U))
+                mU_nan = np.isnan(mU)
+                mU = mU[:,~mU_nan.any(axis=0)]
+                if mU.shape[1] < 10:
                     raise ValueError('Not enough observations to perform SVAR-IV identification')
-                if True: # uncentered
-                    insUcov = (1/nT)*(insU.T@insU)
-                else:    # centered
-                    insUcov = np.cov(insU,rowvar=False)
-#                     print(insUcov)
-    #             print((insUcov[0:1,1:]@np.linalg.inv(insUcov[1:,1:])@insUcov[1:,0:1]))
-                method__ = 0
-                if method__ == 0: # regression
-                    X = np.column_stack((np.ones((insU.shape[0],1)),insU[:,0:1]))
-                    Y = insU[:,1:]
-                    beta1 = np.linalg.solve(X.T@X,X.T@Y)[1,:]
-    #             beta_idv = insUcov[1:,0:1]@np.linalg.cholesky(insUcov[0:1,1:]@np.linalg.inv(insUcov[1:,1:])@insUcov[1:,0:1])
-    #             beta_idv = beta_idv[:]/sp[4]
-    #             print(beta_idv)
-    #             insUstd = np.std(insU,axis=0,ddof=1).reshape(-1,1)
-                if method__ == 1: # moments
-                    beta1 = insUcov[0,1:]
+                centered = False
+                if centered:
+                    S_mU = np.cov(mU)
+                else:
+                    S_mU = (1/mU.shape[1])*(mU@mU.T)
+                method__ = 'regression'
+                
+                if method__ == 'regression':
+                    X = np.row_stack((np.ones((1,mU.shape[1])),mU[0:1,:]))
+                    Y = mU[1:,:]
+                    beta1 = np.linalg.solve(X@X.T,X@Y.T)[1,:]
+                
+                if method__ == 'moments':
+                    beta1 = S_mU[1:,0]
+                
                 # normalize
-#                     print(beta1)
                 beta1 = beta1[:]/beta1[v]
-#                     print(beta1)
     #             A0inv[:,v] = (insUcov[1:,0]/insUstd[0]).T # st. dev. of explained part
     #             A0inv[:,v] = (insUcov[1:,0]/insUcov[v+1,0]).T # st. dev. of residual
     #             A0inv[:,v] = (insUcov[1:,0]/(insUcov[v+1,0]/insUstd[v+1])).T # st. dev. of residual
     #             A0inv[:,v] = A0inv[:,v]/A0inv[v,v] # unit
                 A0inv[:,v] = beta1.T
+        
         if method_ == 1:
             nM = M.shape[0]
             idv1 = []
@@ -589,45 +570,20 @@ def get_A0inv_njit(method=None,U=None,S=None,idv=None,M=None):
                         break
                 if not in_idv:
                     not_idv.append(_)
-            # print(not_idv)
-            # not_idv = np.array([_ for _ in range(nY) if _ not in idv])
+
             # Reorder instrumented residuals first
             U_ = np.full_like(U,np.nan)
             for (iU_,iU) in enumerate([_ for _ in idv]+[_ for _ in not_idv]):
                 U_[iU_,:] = U[iU,:]
-            # U_ = np.row_stack((U[idv,:],U[not_idv,:]))
-#                 print(U_.shape)
-            A0inv = np.sqrt(np.diag(np.diag(S)))
-#                 A0inv = np.zeros((nY,nY))
-            # The formulas from Mertens & Ravn (2013) Appendix A
-            Suu = (1/nT)*(U_@U_.T)
-            Smu = (1/nT)*(M@U_.T)
-#                 print(Smu)
-            Smu1 = np.ascontiguousarray(Smu[:,:nM])
-            Smu2 = np.ascontiguousarray(Smu[:,nM:])
-            S11 = np.ascontiguousarray(Suu[:nM,:nM])
-            S21 = np.ascontiguousarray(Suu[nM:,:nM])
-            S22 = np.ascontiguousarray(Suu[nM:,nM:])
-            b21_b11_1 = np.ascontiguousarray((np.ascontiguousarray(np.linalg.inv(Smu1))@Smu2).T)
-            Z = b21_b11_1@S11@b21_b11_1.T-(S21@b21_b11_1.T+b21_b11_1@S21.T)+S22
-            b12_b12_T = (S21-b21_b11_1@S11).T@np.ascontiguousarray(np.linalg.inv(Z))@(S21-b21_b11_1@S11)
-            b22_b22_T = S22+b21_b11_1@(b12_b12_T-S11)@b21_b11_1.T
-            b12_b22_1 = (b12_b12_T@b21_b11_1.T+(S21-b21_b11_1@S11).T)@b22_b22_T
-            b11_b11_T = S11-b12_b12_T
-            S1_S1_T = (np.eye(nM)-b12_b22_1@b21_b11_1)@b11_b11_T@(np.eye(nM)-b12_b22_1@b21_b11_1).T
-            S1 = np.ascontiguousarray(np.linalg.cholesky(S1_S1_T))
-            b11_S1_1 = np.ascontiguousarray(np.linalg.inv(np.eye(nM)-b12_b22_1@b21_b11_1))
-            b21_S1_1 = b21_b11_1@np.ascontiguousarray(np.linalg.inv(np.eye(nM)-b12_b22_1@b21_b11_1))
-            b11 = b11_S1_1@S1
-            b21 = b21_S1_1@S1
-#                 print(b21_b11_1)
-#                 print(S1)
-#                 print(b11_S1_1,b21_S1_1)
-#                 print(b21_S1_1/b11_S1_1)
-#                 print(b21/b11)
-#                 print(b21)
-#                 print(idv)
-#                 print(not_idv)
+            MU = np.row_stack((M,U_))
+            # Remove time periods with nans
+            MU_nan = np.isnan(MU)
+            MU = MU[:,~MU_nan.any(axis=0)]
+            if MU.shape[1] < 10:
+                raise ValueError('Not enough observations to perform SVAR-IV identification')
+            
+            b11,b21 = iv_block_njit(MU,nM)
+ 
             for (ib,iA) in enumerate(idv):
                 for (jb,jA) in enumerate(idv):
                     A0inv[iA,jA] = b11[ib,jb]
@@ -641,7 +597,74 @@ def get_A0inv_njit(method=None,U=None,S=None,idv=None,M=None):
     return A0inv
 
 
-# In[226]:
+# In[170]:
+
+
+def iv_block(MU,nM):
+    # The formulas from Mertens & Ravn (2013) Appendix A
+    S_mumu = (1/MU.shape[1])*(MU@MU.T)
+    S_uu = S_mumu[nM:,nM:]
+    S_mu = S_mumu[:nM,nM:]
+    S_mu1 = S_mu[:,:nM]
+    S_mu2 = S_mu[:,nM:]
+    S11 = S_uu[:nM,:nM]
+    S21 = S_uu[nM:,:nM]
+    S22 = S_uu[nM:,nM:]
+    b21_b11_1 = (np.linalg.inv(S_mu1)@S_mu2).T
+#     b21_b11_1 = np.linalg.solve(S_mu1,S_mu2).T
+    Z = b21_b11_1@S11@b21_b11_1.T-(S21@b21_b11_1.T+b21_b11_1@S21.T)+S22
+    b12_b12_T = (S21-b21_b11_1@S11).T@np.linalg.inv(Z)@(S21-b21_b11_1@S11)
+#     b12_b12_T = (S21-b21_b11_1@S11).T@np.linalg.solve(Z,S21-b21_b11_1@S11)
+    b22_b22_T = S22+b21_b11_1@(b12_b12_T-S11)@b21_b11_1.T
+    b12_b22_1 = (b12_b12_T@b21_b11_1.T+(S21-b21_b11_1@S11).T)@b22_b22_T
+    b11_b11_T = S11-b12_b12_T
+    S1_S1_T = (np.eye(nM)-b12_b22_1@b21_b11_1)@b11_b11_T@(np.eye(nM)-b12_b22_1@b21_b11_1).T
+    S1 = np.linalg.cholesky(S1_S1_T)
+    b11_S1_1 = np.linalg.inv(np.eye(nM)-b12_b22_1@b21_b11_1)
+#     b11_S1_1 = np.linalg.solve(np.eye(nM)-b21_b11_1.T@b12_b22_1.T,np.eye(nM)).T
+    b21_S1_1 = b21_b11_1@np.linalg.inv(np.eye(nM)-b12_b22_1@b21_b11_1)
+#     b21_S1_1 = np.linalg.solve(np.eye(nM)-b21_b11_1.T@b12_b22_1.T,b21_b11_1.T).T
+    b11 = b11_S1_1@S1
+    b21 = b21_S1_1@S1
+    return b11,b21
+
+
+# In[171]:
+
+
+@nb.njit
+def iv_block_njit(MU,nM):
+    # The formulas from Mertens & Ravn (2013) Appendix A
+    MU = np.ascontiguousarray(MU)
+    MU_T = np.ascontiguousarray(MU.T)
+    S_mumu = (1/MU.shape[1])*(MU@MU_T)
+    S_uu = S_mumu[nM:,nM:]
+    S_mu = S_mumu[:nM,nM:]
+    S_mu1 = np.ascontiguousarray(S_mu[:,:nM])
+    S_mu2 = np.ascontiguousarray(S_mu[:,nM:])
+    S11 = np.ascontiguousarray(S_uu[:nM,:nM])
+    S21 = np.ascontiguousarray(S_uu[nM:,:nM])
+    S22 = np.ascontiguousarray(S_uu[nM:,nM:])
+#     b21_b11_1 = (np.linalg.inv(S_mu1)@S_mu2).T
+    b21_b11_1 = np.linalg.solve(S_mu1,S_mu2).T
+    Z = b21_b11_1@S11@b21_b11_1.T-(S21@b21_b11_1.T+b21_b11_1@S21.T)+S22
+#     b12_b12_T = (S21-b21_b11_1@S11).T@np.linalg.inv(Z)@(S21-b21_b11_1@S11)
+    b12_b12_T = (S21-b21_b11_1@S11).T@np.linalg.solve(Z,S21-b21_b11_1@S11)
+    b22_b22_T = S22+b21_b11_1@(b12_b12_T-S11)@b21_b11_1.T
+    b12_b22_1 = (b12_b12_T@b21_b11_1.T+(S21-b21_b11_1@S11).T)@b22_b22_T
+    b11_b11_T = S11-b12_b12_T
+    S1_S1_T = (np.eye(nM)-b12_b22_1@b21_b11_1)@b11_b11_T@(np.eye(nM)-b12_b22_1@b21_b11_1).T
+    S1 = np.linalg.cholesky(S1_S1_T)
+#     b11_S1_1 = np.linalg.inv(np.eye(nM)-b12_b22_1@b21_b11_1)
+    b11_S1_1 = np.linalg.solve(np.eye(nM)-b21_b11_1.T@b12_b22_1.T,np.eye(nM)).T
+#     b21_S1_1 = b21_b11_1@np.linalg.inv(np.eye(nM)-b12_b22_1@b21_b11_1)
+    b21_S1_1 = np.linalg.solve(np.eye(nM)-b21_b11_1.T@b12_b22_1.T,b21_b11_1.T).T
+    b11 = b11_S1_1@S1
+    b21 = b21_S1_1@S1
+    return b11,b21
+
+
+# In[172]:
 
 
 def get_sirf_from_irf(Psi,A0inv,impulse):
@@ -662,7 +685,7 @@ def get_sirf_from_irf(Psi,A0inv,impulse):
     return ir,irc
 
 
-# In[227]:
+# In[173]:
 
 
 @nb.njit # not used
@@ -684,7 +707,7 @@ def get_sirf_from_irf_njit(Psi,A0inv,impulse):
     return ir,irc
 
 
-# In[228]:
+# In[181]:
 
 
 def bs(Y,c,B,U,S,UM,nL,nY,nH,nT,/,*,method=None,impulse=None,cl=None,ci=None,idv=None,M=None):
@@ -713,7 +736,7 @@ def bs(Y,c,B,U,S,UM,nL,nY,nH,nT,/,*,method=None,impulse=None,cl=None,ci=None,idv
     return ir_,irc_
 
 
-# In[229]:
+# In[182]:
 
 
 @nb.njit # not used
@@ -743,7 +766,7 @@ def bs_njit(Y,c,B,U,S,UM,nL,nY,nH,nT,/,*,method=None,impulse=None,cl=None,ci=Non
     return ir_,irc_
 
 
-# In[230]:
+# In[183]:
 
 
 def get_irfs(Y,c,B,U,S,/,*,nH,method=None,impulse=None,cl=None,ci=None,nR=1000,idv=None,M=None):
@@ -809,7 +832,7 @@ def get_irfs(Y,c,B,U,S,/,*,nH,method=None,impulse=None,cl=None,ci=None,nR=1000,i
     return ir,irc,Psi,A0inv
 
 
-# In[231]:
+# In[184]:
 
 
 class varm:
@@ -1051,11 +1074,19 @@ class varm:
 
 # %load_ext line_profiler
 
-# %lprun -f varm.bs varm(data,var_names=['0','1','3','2','4','5'],nL=4).irf(method='iv',ci='wbs',nR=1000,idv=[1],ins_names=['6'])
+# data.shape
+
+# %lprun -f bs varm(data,var_names=['0','1','3','2','4','5'],nL=4).irf(method='iv',ci='wbs',nR=1000,idv=[1],ins_names=['6'])
 
 # print(MM.model.irfs.iv.ir.mean[0])
 
 # print(MM.model.irfs.iv.ir.mean[0])
+
+# In[ ]:
+
+
+
+
 
 # print(MM. model.parameters.B[0])
 
