@@ -161,8 +161,8 @@ class nsm:
         
     def __init__(self,yields,tau,lam):
         
-#         if len(yields.shape) == 1:
-#             yields = yields[None,:]
+        if len(yields.shape) == 1:
+            yields = yields[None,:]
             
         if yields.shape[1] != tau.shape[0]:
             raise SyntaxError('yields and tau must have the same length')
@@ -174,9 +174,15 @@ class nsm:
         self.fit()
         
     def getLoadings(self,tau,lam):
-        b1l = np.ones_like(tau)
-        b2l = np.array((1-np.exp(-lam*tau))/(lam*tau))
-        b3l = np.array((1-np.exp(-lam*tau))/(lam*tau)-np.exp(-lam*tau))
+        classic = False
+        if classic:
+            b1l = np.ones_like(tau)
+            b2l = np.array((1-np.exp(-lam*tau))/(lam*tau))
+            b3l = np.array((1-np.exp(-lam*tau))/(lam*tau)-np.exp(-lam*tau))
+        else:
+            b1l = np.array((1-np.exp(-lam*tau))/(lam*tau))
+            b2l = np.array((1-np.exp(-lam*tau))/(lam*tau)-np.exp(-lam*tau))
+            b3l = np.ones_like(tau)-np.array((1-np.exp(-lam*tau))/(lam*tau))
         return np.column_stack((b1l,b2l,b3l))
     
     def olsproj(self,yin,Xin):

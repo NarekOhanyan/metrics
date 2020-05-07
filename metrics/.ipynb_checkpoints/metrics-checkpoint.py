@@ -3,7 +3,7 @@
 
 # # Load packages
 
-# In[2]:
+# In[15]:
 
 
 import numpy as np
@@ -12,10 +12,7 @@ import pandas as pd
 import matplotlib.pyplot as mpl
 
 
-# a = np.random.random((100,3))
-# data = np.random.random((1000,10))
-
-# In[4]:
+# In[16]:
 
 
 class block:
@@ -29,7 +26,7 @@ class block:
 
 # ### OLS
 
-# In[5]:
+# In[3]:
 
 
 def ols(yin,Xin,dfcin=True):
@@ -134,7 +131,7 @@ def ols(yin,Xin,dfcin=True):
     return b,se,V,e,S
 
 
-# In[6]:
+# In[4]:
 
 
 # df = pd.read_csv('testdata.csv')
@@ -142,7 +139,7 @@ def ols(yin,Xin,dfcin=True):
 
 # b,se,V,e,S = ols(df.values[:,0:3],df.values[:,3:13])
 
-# In[7]:
+# In[5]:
 
 
 # S
@@ -157,15 +154,15 @@ def ols(yin,Xin,dfcin=True):
 
 # ## Nelson-Siegel model
 
-# In[8]:
+# In[6]:
 
 
 class nsm:
         
     def __init__(self,yields,tau,lam):
         
-#         if len(yields.shape) == 1:
-#             yields = yields[None,:]
+        if len(yields.shape) == 1:
+            yields = yields[None,:]
             
         if yields.shape[1] != tau.shape[0]:
             raise SyntaxError('yields and tau must have the same length')
@@ -177,9 +174,15 @@ class nsm:
         self.fit()
         
     def getLoadings(self,tau,lam):
-        b1l = np.ones_like(tau)
-        b2l = np.array((1-np.exp(-lam*tau))/(lam*tau))
-        b3l = np.array((1-np.exp(-lam*tau))/(lam*tau)-np.exp(-lam*tau))
+        classic = False
+        if classic:
+            b1l = np.ones_like(tau)
+            b2l = np.array((1-np.exp(-lam*tau))/(lam*tau))
+            b3l = np.array((1-np.exp(-lam*tau))/(lam*tau)-np.exp(-lam*tau))
+        else:
+            b1l = np.array((1-np.exp(-lam*tau))/(lam*tau))
+            b2l = np.array((1-np.exp(-lam*tau))/(lam*tau)-np.exp(-lam*tau))
+            b3l = np.ones_like(tau)-np.array((1-np.exp(-lam*tau))/(lam*tau))
         return np.column_stack((b1l,b2l,b3l))
     
     def olsproj(self,yin,Xin):
@@ -237,14 +240,10 @@ class nsm:
 
 # ## VAR model
 
-# In[9]:
+# In[7]:
 
 
 class varms:
-    
-    class dir:
-        def __init__(self):
-            pass
         
     def __init__(self,data,nP):
         if data.shape[0] > data.shape[1]:
@@ -256,7 +255,7 @@ class varms:
         self.n1 = n1
         self.nT = n1 - nP
         self.nK = n0
-        self.model.irfs = self.dir()
+        self.model.irfs = block()
     
     def fit(self):
         data = self.data
@@ -278,11 +277,11 @@ class varms:
         U = Y-cB@Z
         S = (1/(nT-nP*nK-1))*(U@U.T)
 
-        self.parameters = self.dir()
+        self.parameters = block()
         self.parameters.c = c
         self.parameters.B = B
         self.parameters.S = S
-        self.residuals = self.dir()
+        self.residuals = block()
         self.residuals.rd = U
         
     def irf(self,nH,method='cholesky',idv=None,ins_names=None):
@@ -303,7 +302,7 @@ class varms:
         
         self.model.irfs.rd = Psi
         self.model.irfs.rdc = np.cumsum(Psi,0)
-        self.parameters.A0inv = self.dir()
+        self.parameters.A0inv = block()
 
         if method == 'cholesky':
             A0inv = np.linalg.cholesky(S)
@@ -323,14 +322,14 @@ class varms:
             self.model.irfs.iv = Psi@A0inv
             self.model.irfs.ivc = np.cumsum(Psi@A0inv,0)
             self.parameters.A0inv.iv = A0inv
-            self.iv = self.dir()
+            self.iv = block()
             self.iv.idv = idv
             self.iv.ins_names = ins_names
 
 
 # ### VAR-OLS
 
-# In[10]:
+# In[8]:
 
 
 def varols(data,nL):
@@ -357,7 +356,7 @@ def varols(data,nL):
     return c, B, U, S
 
 
-# In[11]:
+# In[9]:
 
 
 @nb.njit
@@ -389,7 +388,7 @@ def varols_njit(data,nL):
 
 # ### VAR simulate
 
-# In[12]:
+# In[10]:
 
 
 def varsim(c,B,U,Y0):
@@ -411,7 +410,7 @@ def varsim(c,B,U,Y0):
     return Y
 
 
-# In[13]:
+# In[11]:
 
 
 @nb.njit
@@ -436,7 +435,7 @@ def varsim_njit(c,B,U,Y0):
 
 # ### get Psi from B
 
-# In[14]:
+# In[12]:
 
 
 def get_Psi_from_B(B,nH):
@@ -449,7 +448,7 @@ def get_Psi_from_B(B,nH):
     return Psi
 
 
-# In[15]:
+# In[13]:
 
 
 @nb.njit
@@ -465,7 +464,7 @@ def get_Psi_from_B_njit(B,nH):
 
 # ### Get A0inv
 
-# In[168]:
+# In[14]:
 
 
 def get_A0inv(method=None,U=None,S=None,idv=None,M=None):
@@ -532,7 +531,7 @@ def get_A0inv(method=None,U=None,S=None,idv=None,M=None):
     return A0inv
 
 
-# In[169]:
+# In[15]:
 
 
 @nb.njit # not used
@@ -553,18 +552,18 @@ def get_A0inv_njit(method=None,U=None,S=None,idv=None,M=None):
                 mU = mU[:,~mU_nan.any(axis=0)]
                 if mU.shape[1] < 10:
                     raise ValueError('Not enough observations to perform SVAR-IV identification')
+
                 centered = False
                 if centered:
                     S_mU = np.cov(mU)
                 else:
                     S_mU = (1/mU.shape[1])*(mU@mU.T)
+                    
                 method__ = 'regression'
-                
                 if method__ == 'regression':
                     X = np.row_stack((np.ones((1,mU.shape[1])),mU[0:1,:]))
                     Y = mU[1:,:]
                     beta1 = np.linalg.solve(X@X.T,X@Y.T)[1,:]
-                
                 if method__ == 'moments':
                     beta1 = S_mU[1:,0]
                 
@@ -619,7 +618,7 @@ def get_A0inv_njit(method=None,U=None,S=None,idv=None,M=None):
 
 # ### IV-identification
 
-# In[ ]:
+# In[16]:
 
 
 def iv_block(MU,nM):
@@ -651,7 +650,7 @@ def iv_block(MU,nM):
     return b11,b21
 
 
-# In[171]:
+# In[17]:
 
 
 @nb.njit
@@ -688,7 +687,7 @@ def iv_block_njit(MU,nM):
 
 # ### get SIRF from IRF
 
-# In[172]:
+# In[197]:
 
 
 def get_sirf_from_irf(Psi,A0inv,impulse):
@@ -709,7 +708,7 @@ def get_sirf_from_irf(Psi,A0inv,impulse):
     return ir,irc
 
 
-# In[173]:
+# In[198]:
 
 
 @nb.njit # not used
@@ -733,7 +732,7 @@ def get_sirf_from_irf_njit(Psi,A0inv,impulse):
 
 # ### Bootstrap
 
-# In[181]:
+# In[20]:
 
 
 def bs(Y,c,B,U,S,UM,nL,nY,nH,nT,/,*,method=None,impulse=None,cl=None,ci=None,idv=None,M=None):
@@ -762,7 +761,7 @@ def bs(Y,c,B,U,S,UM,nL,nY,nH,nT,/,*,method=None,impulse=None,cl=None,ci=None,idv
     return ir_,irc_
 
 
-# In[182]:
+# In[21]:
 
 
 @nb.njit # not used
@@ -794,7 +793,7 @@ def bs_njit(Y,c,B,U,S,UM,nL,nY,nH,nT,/,*,method=None,impulse=None,cl=None,ci=Non
 
 # ### get IRFs
 
-# In[183]:
+# In[12]:
 
 
 def get_irfs(Y,c,B,U,S,/,*,nH,method=None,impulse=None,cl=None,ci=None,nR=1000,idv=None,M=None):
@@ -862,14 +861,14 @@ def get_irfs(Y,c,B,U,S,/,*,nH,method=None,impulse=None,cl=None,ci=None,nR=1000,i
 
 # ### VAR
 
-# In[184]:
+# In[23]:
 
 
 class varm:
 
     # ===================================================================================================================
 
-    def __init__(self,data,nL=None,var_names=None,sample=None):
+    def __init__(self,data,/,*,nL=None,var_names=None,sample=None):
         
         if data.shape[0] < data.shape[1]:
             data = data.T
@@ -878,7 +877,7 @@ class varm:
             pass
         elif isinstance(data,(pd.Series,np.ndarray)):
             data = pd.DataFrame(data)
-            data.columns = [str(i) for i in data.columns] 
+            data.columns = [str(i) for i in data.columns]
             
         if var_names is None:
             var_names = data.columns
@@ -1127,16 +1126,77 @@ class varm:
 
 # ### LP
 
-# In[311]:
+# ### LP-OLS
+
+# In[17]:
+
+
+def lpols(Xdata,Ydata,nL,nH):
+    """
+    Function to estimate LP(nL,nH) model using OLS
+    """
+    (n0,n1) = Ydata.shape
+    nY = n0
+    (n0,n1) = Xdata.shape
+    nT = n1 - nL - nH
+    nX = n0
+    nK = nL - 1
+
+    Y = np.full((0,n1),np.nan)
+    for h in range(0,nH+1):
+        Y = np.row_stack((Y,np.roll(Ydata,-h)))
+
+    X = np.array(Xdata)
+
+    Z = np.ones((1,n1))
+    for l in range(1,nK+1):
+        Z = np.row_stack((Z,np.roll(Xdata,l)))
+
+    X = X[:,nL:n1-nH]
+    Y = Y[:,nL:n1-nH]
+    Z = Z[:,nL:n1-nH]
+
+#     print(X.shape)
+#     print(X[:,:])
+#     print(Y.shape)
+#     print(Y[:,:])
+#     print(Z.shape)
+#     print(Z[:,:])
+    Mz = np.eye(nT) - Z.T@np.linalg.inv(Z@Z.T)@Z
+    B = (Y@Mz@X.T)@np.linalg.inv(X@Mz@X.T)
+    U = Y@Mz - B@X@Mz
+    U = U.reshape((nH+1,nY,nT))
+    B = B.T.reshape((nX,nH+1,nY)).transpose((1,2,0)) #.swapaxes(1,2)
+    S = (1/nT)*(U[1]@U[1].T)
+    return B, U, S
+
+
+# In[194]:
+
+
+def get_lp_irfs(B,U,S,/,*,method=None,impulse=None,idv=None,M=None):
+    (_,nY,nX) = B.shape
+
+#         Psi = get_Psi_from_B(B,nH)
+    Psi = np.array(B)
+#     A0inv = get_A0inv(method=method,U=U,S=S,idv=idv,M=M)
+    A0inv = np.eye(nX)
+    irm,irmc = get_sirf_from_irf(Psi,A0inv,impulse)
+    ir = block()
+    irc = block()
+    ir.mean = irm
+    irc.mean = irmc
+    return ir,irc,Psi,A0inv
+
+
+# In[204]:
 
 
 class lpm:
     
-    class dir:
-        def __init__(self):
-            pass
-        
-    def __init__(self,data,nL=None,nH=None,Y_var_names=None,X_var_names=None,sample=None):
+    # ===================================================================================================================
+
+    def __init__(self,data,/,*,nL=None,nH=None,Y_var_names=None,X_var_names=None,sample=None):
         
         if data.shape[0] < data.shape[1]:
             data = data.T
@@ -1145,193 +1205,194 @@ class lpm:
             pass
         elif isinstance(data,(pd.Series,np.ndarray)):
             data = pd.DataFrame(data)
-            
+            data.columns = [str(i) for i in data.columns]
+
         if Y_var_names is None:
-            Y_var_names = data.columns
+            Y_var_names = data.columns.tolist()
         if X_var_names is None:
-            X_var_names = data.columns
+            X_var_names = data.columns.tolist()
             
         (n0,n1) = data.shape
         self.data = data
-        self.model = self.dir()
-        self.model.Y_var_names = Y_var_names
-        self.model.X_var_names = X_var_names
-        self.model.var_names = list(set(Y_var_names).intersection(X_var_names))      
-        self.model.nL = nL
-        self.model.nH = nH
-        self.model.nY = len(Y_var_names)
-        self.model.nX = len(X_var_names)
-        self.model.slp = self.dir()
-        self.model.irfs = self.dir()
+        self.model = block()
+        self.model.spec = block()
+        self.model.spec.Y_var_names = Y_var_names
+        self.model.spec.X_var_names = X_var_names
+        self.model.spec.var_names = X_var_names + [name for name in Y_var_names if name not in X_var_names]
+        self.model.spec.nL = nL
+        self.model.spec.nH = nH
+        self.model.spec.nY = len(Y_var_names)
+        self.model.spec.nX = len(X_var_names)
+        self.model.slp = block()
+        self.model.irfs = block()
+        self.model.irfs.spec = block()
+
         self.set_sample(sample)
-    
+
+    # ===================================================================================================================
+
     def fit(self):
-        isample = self.model.isample
-        nL = self.model.nL
-        nH = self.model.nH
-        nY = self.model.nY
-        nX = self.model.nX
-        Y_var_names = self.model.Y_var_names
-        X_var_names = self.model.X_var_names
-        var_names = self.model.var_names
+        isample = self.model.spec.isample
+        nL = self.model.spec.nL
+        nH = self.model.spec.nH
+        nY = self.model.spec.nY
+        nX = self.model.spec.nX
+        Y_var_names = self.model.spec.Y_var_names
+        X_var_names = self.model.spec.X_var_names
+        var_names = self.model.spec.var_names
         Y_var_indices = [i for i,name in enumerate(self.data.columns) if name in Y_var_names]
         X_var_indices = [i for i,name in enumerate(self.data.columns) if name in X_var_names]
-        data = self.data[var_names].iloc[isample[0]-nL:isample[1]+nH+1,:].values
+        data = self.data[var_names].iloc[isample[0]-nL:isample[1]+nH,:].values
         (n0,n1) = data.shape
-        nT = self.model.nT
         nK = nL - 1
-#         offset = nK
         
-#         print(n0,n1,nT,nL,nH)
-#         print(Y_var_indices,X_var_indices)
-#         y = np.full((nK+nH+1,nT,nY),np.nan)
-#         Y = np.full((nH+1,nT,nY),np.nan)
-#         X = np.full((nK+1,nT,nY),np.nan)
+        B, U, S = lpols(data[:,X_var_indices].T,data[:,Y_var_indices].T,nL,nH)
+
+# #         offset = nK
         
-#         # Creating y
-#         for idj in range(-nK,nH+1):
-#             y[offset+idj] = data[offset+idj:offset+nT+idj,Y_var_indices]
-#         # Creating Y
-#         for idj in range(1,nH+1):
-#             Y[idj] = data[offset+idj:offset+nT+idj,Y_var_indices] #y[offset+1:offset:idh,:,:]
-#         # Creating X
-#         for idj in range(0,nK):
-#             X[idj] = data[offset-idj:offset+nT-idj,X_var_indices] #y[offset+1:offset:idh,:,:]
-#         # Creating Z
-#         for idj in range(1,nK):
-#             Z[idj] = np.row_stack((np.ones((1,n0)),np.roll(data.T,p)))  X[] data[offset-idj:offset+nT-idj,X_var_indices] #y[offset+1:offset:idh,:,:]
+# #         print(n0,n1,nT,nL,nH)
+# #         print(Y_var_indices,X_var_indices)
+# #         y = np.full((nK+nH+1,nT,nY),np.nan)
+# #         Y = np.full((nH+1,nT,nY),np.nan)
+# #         X = np.full((nK+1,nT,nY),np.nan)
+        
+# #         # Creating y
+# #         for idj in range(-nK,nH+1):
+# #             y[offset+idj] = data[offset+idj:offset+nT+idj,Y_var_indices]
+# #         # Creating Y
+# #         for idj in range(1,nH+1):
+# #             Y[idj] = data[offset+idj:offset+nT+idj,Y_var_indices] #y[offset+1:offset:idh,:,:]
+# #         # Creating X
+# #         for idj in range(0,nK):
+# #             X[idj] = data[offset-idj:offset+nT-idj,X_var_indices] #y[offset+1:offset:idh,:,:]
+# #         # Creating Z
+# #         for idj in range(1,nK):
+# #             Z[idj] = np.row_stack((np.ones((1,n0)),np.roll(data.T,p)))  X[] data[offset-idj:offset+nT-idj,X_var_indices] #y[offset+1:offset:idh,:,:]
         
 
 
-        Y = np.full((0,n0),np.nan)
-        for h in range(1,nH+1):
-            Y = np.row_stack((Y,np.roll(data[:,Y_var_indices].T,-h)))
+#         Y = np.full((0,n0),np.nan)
+#         for h in range(1,nH+1):
+#             Y = np.row_stack((Y,np.roll(data[:,Y_var_indices].T,-h)))
         
-        X = data[:,X_var_indices].T
+#         X = data[:,X_var_indices].T
         
-        Z = np.ones((1,n0))
-        for l in range(1,nK+1):
-            Z = np.row_stack((Z,np.roll(data[:,X_var_indices].T,l)))
+#         Z = np.ones((1,n0))
+#         for l in range(1,nK+1):
+#             Z = np.row_stack((Z,np.roll(data[:,X_var_indices].T,l)))
         
-#         print(Y.shape,X.shape,Z.shape)
+# #         print(Y.shape,X.shape,Z.shape)
         
-        X = X[:,nK:-nH].T
-        Y = Y[:,nK:-nH].T
-        Z = Z[:,nK:-nH].T
-#         print(Y.shape,X.shape,Z.shape)
-#         print(Y)
-        Mz = np.eye(nT) - Z@np.linalg.inv(Z.T@Z)@Z.T
-        B = np.linalg.inv(X.T@Mz@X)@(X.T@Mz@Y)
-#         print(Y)
-#         print(B)
-#         cB = (Y@Z.T)@(np.linalg.inv(Z@Z.T))
-        U = Mz@Y - Mz@X@B
-        U = U.T.reshape((nH,nX,nT))
-        S = (1/nT)*(U[0]@U[0].T)
-        B = B.reshape((nX,nH,nX)).swapaxes(0,1) #.swapaxes(1,2)
+#         X = X[:,nK:-nH].T
+#         Y = Y[:,nK:-nH].T
+#         Z = Z[:,nK:-nH].T
+# #         print(Y.shape,X.shape,Z.shape)
+# #         print(Y)
+#         Mz = np.eye(nT) - Z@np.linalg.inv(Z.T@Z)@Z.T
+#         B = np.linalg.inv(X.T@Mz@X)@(X.T@Mz@Y)
+# #         print(Y)
+# #         print(B)
+# #         cB = (Y@Z.T)@(np.linalg.inv(Z@Z.T))
+#         U = Mz@Y - Mz@X@B
+#         U = U.T.reshape((nH,nX,nT))
+#         S = (1/nT)*(U[0]@U[0].T)
+#         B = B.reshape((nX,nH,nX)).swapaxes(0,1) #.swapaxes(1,2)
 
         
-        self.model.parameters = self.dir()
+        self.model.parameters = block()
         self.model.parameters.B = B
         self.model.parameters.S = S
-        self.model.parameters.A0inv = self.dir()
-        self.model.residuals = self.dir()
+        self.model.parameters.A0inv = block()
+        self.model.residuals = block()
         self.model.residuals.rd = U
+        
         if hasattr(self.model.slp,'ch'):
             self.irf(method='ch')
         if hasattr(self.model.slp,'iv'):
             self.irf(method='iv')
 
-    def irf(self,method='ch',impulse='unit',idv=None,ins_names=None):
+    # ===================================================================================================================
+
+    def irf(self,method=None,impulse=None,idv=None,ins_names=None):
         
-        self.model.impulse = impulse
+        if impulse is None:
+            if hasattr(self.model.irfs.spec,'impulse'):
+                impulse = self.model.irfs.spec.impulse
+            else:
+                impulse = 'unit'
+                
+        self.model.irfs.spec.impulse = impulse
+        self.model.irfs.spec.nH = self.model.spec.nH
         
-        nT = self.model.nT
-        nL = self.model.nL
-        nX = self.model.nX
-        nH = self.model.nH
+        nT = self.model.spec.nT
+        nL = self.model.spec.nL
+        nX = self.model.spec.nX
+        nH = self.model.spec.nH
         B = self.model.parameters.B
         S = self.model.parameters.S
         U = self.model.residuals.rd
-        isample = self.model.isample
-        data = self.data.iloc[isample[0]-nL:isample[1]+nH+1,:].values
+        isample = self.model.spec.isample
 
-        Psi = np.zeros((nH+1,nX,nX))
-        Psi[0] = np.eye(nX)
-        for h in range(1,nH+1):
-            Psi[h] = B[h-1]
-        
-        self.model.irfs.rd = Psi
-        self.model.irfs.rdc = np.cumsum(Psi,0)
-        
-        def get_sirf_from_irf(Psi,A0inv,impulse):
-            if impulse == 'unit':
-                impulse_scale = np.diag(1/np.diag(A0inv))
-            if impulse == '1sd':
-                impulse_scale = np.eye(nX)
-            Impact = A0inv@impulse_scale
-            ir = Psi@Impact
-            irc = np.cumsum(Psi@Impact,0)
-            return ir, irc
+        if isinstance(impulse,list) or isinstance(impulse,np.ndarray):
+            impulse = np.diag(impulse)
+        if isinstance(impulse,float):
+            impulse = impulse*np.eye(nY)
             
         if method == 'ch':
-            A0inv = np.linalg.cholesky(S)
-            ir,irc = get_sirf_from_irf(Psi,A0inv,impulse)
-            self.model.irfs.ch = ir
-            self.model.irfs.chc = irc
-            self.model.parameters.A0inv.ch = A0inv
-            self.model.residuals.ch = U[0].T@np.linalg.inv(A0inv)
-            self.model.slp.ch = self.dir()
-            self.model.slp.ch.impulse = impulse
-
+            idv = None
+            ins_names = None
+            M = None
+            
         if method == 'iv':
             if idv is None or ins_names is None:
-                if hasattr(self.model.svar,'iv'):
-                    if hasattr(self.model.svar.iv,'idv') and hasattr(self.model.svar.iv,'ins_names'):
-                        idv = self.model.svar.iv.idv
-                        ins_names = self.model.svar.iv.ins_names
+                if hasattr(self.model.slp,'iv'):
+                    if hasattr(self.model.slp.iv,'idv') and hasattr(self.model.slp.iv,'ins_names'):
+                        idv = self.model.slp.iv.idv
+                        ins_names = self.model.slp.iv.ins_names
                     else:
-                        raise SyntaxError('Please provide an instrument for SVAR-IV identification')
+                        raise SyntaxError('Please provide an instrument for SLP-IV identification')
                 else:
-                    raise SyntaxError('Please provide an instrument for SVAR-IV identification')
+                    raise SyntaxError('Please provide an instrument for SLP-IV identification')
             else:
-                if type(idv) == int:
-                    idv = np.array([idv])
-                if type(idv) == list:
-                    idv = np.array(idv)
-            if type(ins_names) == str:
-                ins_names = [ins_names]
-            if type(ins_names) == list:
-                pass
-            if idv.shape[0] != len(ins_names):
+                if isinstance(idv,int):
+                    idv = [idv]
+                if isinstance(ins_names,str):
+                    ins_names = [ins_names]
+            if len(idv) != len(ins_names):
                 raise SyntaxError('The number of instruments must be equal the number of instrumented variables')
             
-            instruments = self.data[ins_names].iloc[isample[0]-nL:isample[1]+nH+1,:].values
+            instruments = self.data[ins_names].iloc[isample[0]:isample[1]+1,:].values
+            M = instruments.T
+            (nM,_) = M.shape
+            
+        if method in ('ch','iv'):
+            ir,irc,Psi,A0inv = get_lp_irfs(B,U,S,method=method,impulse=impulse,idv=idv,M=M)
+            irfs = block()
+            irfs.ir = ir
+            irfs.irc = irc
+            
+        if method == 'ch':
+            self.model.irfs.ch = irfs
+            self.model.parameters.A0inv.ch = A0inv
+            self.model.slp.ch = block()
 
-            A0inv = np.sqrt(np.diag(np.diag(S)))
-            for v,ins in zip(idv,instruments.T):
-                insU = np.column_stack((ins.T[nK:-nH],U))
-                insUnan = np.isnan(insU)
-                insU = insU[~insUnan.any(axis=1),:]
-                if insU.shape[0] < 10:
-                    raise ValueError('Not enough observations to perform SVAR-IV identification')
-                insUcov = np.cov(insU,rowvar=False)
-                insUstd = np.std(insU,axis=0,ddof=1).reshape(-1,1)
-#                 A0inv[:,v] = (insUcov[1:,0]/insUstd[0]).T # st. dev. of explained part
-                A0inv[:,v] = (insUcov[1:,0]/(insUcov[v+1,0]/insUstd[v+1])).T # st. dev. of residual
-#                 A0inv[:,v] = A0inv[:,v]/A0inv[v,v] # unit
-            ir,irc = get_sirf_from_irf(Psi,A0inv,impulse)
-            self.model.irfs.iv = ir
-            self.model.irfs.ivc = irc
+        if method == 'iv':
+            self.model.irfs.iv = irfs
             self.model.parameters.A0inv.iv = A0inv
-            self.model.slp.iv = self.dir()
+            self.model.slp.iv = block()
             self.model.slp.iv.idv = idv
             self.model.slp.iv.ins_names = ins_names
-            self.model.slp.iv.impulse = impulse
+            
+        ir,irc,Psi,A0inv = get_lp_irfs(B,U,S,impulse=impulse)
+        self.model.irfs.rd = block()
+        self.model.irfs.rd.ir = ir
+        self.model.irfs.rd.irc = irc
+            
+    # ===================================================================================================================
 
     def set_sample(self,sample=None):
         
-        var_names = self.model.var_names
+        var_names = self.model.spec.var_names
         data = self.data[var_names].values
         datarownan = np.isnan(data).any(axis=1)
         if not datarownan.any():
@@ -1348,8 +1409,8 @@ class lpm:
             elif datarownanchange.shape[0] > 2:
                 raise ValueError('Sample should not contain NaNs')
 
-        nL = self.model.nL
-        nH = self.model.nH
+        nL = self.model.spec.nL
+        nH = self.model.spec.nH
         if sample is None:
             isample = (nL+nanoffset[0],self.data.shape[0]-nH-nanoffset[1])
         else:
@@ -1359,41 +1420,34 @@ class lpm:
             
 #         sample = (self.data.index[isample[0]],self.data.index[isample[1]])         
 
-        self.model.sample = sample
-        self.model.isample = isample
-        self.model.nT = isample[1] - isample[0] + 1
+        self.model.spec.sample = sample
+        self.model.spec.isample = isample
+        self.model.spec.nT = isample[1] - isample[0] + 1
+        
         self.fit()
         
+    # ===================================================================================================================
+
     def set_lag_length(self,nL):
         
-        self.model.nL = nL
+        self.model.spec.nL = nL
         self.fit()
         if hasattr(self.model.slp,'ch'):
             self.irf(method='ch')
         if hasattr(self.model.slp,'iv'):
             self.irf(method='iv')
+
+    # ===================================================================================================================
 
     def set_horizon(self,nH):
         
-        self.model.nH = nH
+        self.model.spec.nH = nH
         self.fit()
         if hasattr(self.model.slp,'ch'):
             self.irf(method='ch')
         if hasattr(self.model.slp,'iv'):
             self.irf(method='iv')
 
-
-# df=pd.read_csv('./testdata.csv',index_col=None)
-# df
-
-# c=lpm(df.values[:,0:7],nL=1,nH=1)
-# # c.model.nT
-# # c.set_sample()
-# # c.data
-# # c.model.parameters.B[0]
-# c.irf()
-# # c.irfs.rd
-# c.model.residuals.rd
 
 # ## SFM model
 
@@ -1511,6 +1565,68 @@ class sfm:
         fac = (1/nN)*(X@lam.T)
         return fac, lam
 
+
+# ### Tests
+
+# In[191]:
+
+
+def test_lpols(data,nT):
+    
+#     nT = 100
+#     a = np.random.random((100,3))
+#     data = np.random.random((nT,10))
+    
+    nL, nH = 2, 3
+
+    Y=data[:,:5].T
+    # print(Y.shape)
+    X=data[:,:].T
+    # print(X.shape)
+
+#     B,U,S = lpols(X,Y,nL,nH)
+    LPM = lpm(data,nL=nL,nH=nH,Y_var_names=['0','1','2','3','4'])
+    B = LPM.model.parameters.B
+
+    nX = X.shape[0]
+    for iy,y in enumerate(Y):
+        for h in range(0,nH):
+        #     print(nL+h,nT-(nH-h))
+        #     print(nL,nT-nH)
+        #     print(Y[:,nL+h:nT-(nH-h)].T.shape)
+        #     print(X[:,nL:nT-nH].T.shape)
+#             print(X[:,nL:nT-nH].T[:].T)
+#             print(Y[:,nL+h:nT-(nH-h)].T[:].T)
+            ymat = y[nL+h:nT-(nH-h)].T
+            Xmat = np.ones((nT-nL-nH,1))
+            for l in range(0,nL):
+                Xmat = np.column_stack((Xmat,X[:,nL-l:nT-nH-l].T))
+        #     print(Xmat)
+            lm = sm.OLS(ymat,exog=Xmat).fit()
+#             print(lm.params[1:nX+1])
+#             print(B[h,iy,:])
+    #         print(iy,h)
+            assert (abs(lm.params[1:nX+1]-B[h,iy,:])<1e-10).all()
+
+
+# import statsmodels.api as sm
+# import statsmodels.formula.api as smf
+
+# nT = 150
+# a = np.random.random((100,3))
+# data = np.random.random((nT,10))
+
+# test_lpols(data,nT)
+
+# MLP = lpm(data,nL=1,nH=1)
+
+# LPM = lpm(data,nL=2,nH=3,Y_var_names=['0','1','2','3','4'])
+
+# LPM.model.spec.nT
+
+# MLP.irf()
+
+# MLP.model.irfs.rd.ir.mean
 
 # In[ ]:
 
