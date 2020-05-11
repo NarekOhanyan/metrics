@@ -3,7 +3,7 @@
 
 # # Load packages
 
-# In[15]:
+# In[1]:
 
 
 import numpy as np
@@ -12,7 +12,7 @@ import pandas as pd
 import matplotlib.pyplot as mpl
 
 
-# In[16]:
+# In[2]:
 
 
 class block:
@@ -687,7 +687,7 @@ def iv_block_njit(MU,nM):
 
 # ### get SIRF from IRF
 
-# In[197]:
+# In[18]:
 
 
 def get_sirf_from_irf(Psi,A0inv,impulse):
@@ -708,7 +708,7 @@ def get_sirf_from_irf(Psi,A0inv,impulse):
     return ir,irc
 
 
-# In[198]:
+# In[19]:
 
 
 @nb.njit # not used
@@ -793,7 +793,7 @@ def bs_njit(Y,c,B,U,S,UM,nL,nY,nH,nT,/,*,method=None,impulse=None,cl=None,ci=Non
 
 # ### get IRFs
 
-# In[12]:
+# In[22]:
 
 
 def get_irfs(Y,c,B,U,S,/,*,nH,method=None,impulse=None,cl=None,ci=None,nR=1000,idv=None,M=None):
@@ -1128,7 +1128,7 @@ class varm:
 
 # ### LP-OLS
 
-# In[17]:
+# In[68]:
 
 
 def lpols(Xdata,Ydata,nL,nH):
@@ -1138,7 +1138,7 @@ def lpols(Xdata,Ydata,nL,nH):
     (n0,n1) = Ydata.shape
     nY = n0
     (n0,n1) = Xdata.shape
-    nT = n1 - nL - nH
+    nT = n1 - nL - nH + 1
     nX = n0
     nK = nL - 1
 
@@ -1152,9 +1152,9 @@ def lpols(Xdata,Ydata,nL,nH):
     for l in range(1,nK+1):
         Z = np.row_stack((Z,np.roll(Xdata,l)))
 
-    X = X[:,nL:n1-nH]
-    Y = Y[:,nL:n1-nH]
-    Z = Z[:,nL:n1-nH]
+    X = X[:,nK:n1-nH]
+    Y = Y[:,nK:n1-nH]
+    Z = Z[:,nK:n1-nH]
 
 #     print(X.shape)
 #     print(X[:,:])
@@ -1171,7 +1171,7 @@ def lpols(Xdata,Ydata,nL,nH):
     return B, U, S
 
 
-# In[194]:
+# In[25]:
 
 
 def get_lp_irfs(B,U,S,/,*,method=None,impulse=None,idv=None,M=None):
@@ -1189,7 +1189,7 @@ def get_lp_irfs(B,U,S,/,*,method=None,impulse=None,idv=None,M=None):
     return ir,irc,Psi,A0inv
 
 
-# In[204]:
+# In[26]:
 
 
 class lpm:
@@ -1453,7 +1453,7 @@ class lpm:
 
 # ### SFM
 
-# In[211]:
+# In[27]:
 
 
 class sfm:
@@ -1568,7 +1568,7 @@ class sfm:
 
 # ### Tests
 
-# In[191]:
+# In[138]:
 
 
 def test_lpols(data,nT):
@@ -1577,7 +1577,7 @@ def test_lpols(data,nT):
 #     a = np.random.random((100,3))
 #     data = np.random.random((nT,10))
     
-    nL, nH = 2, 3
+    nL, nH = 3, 2
 
     Y=data[:,:5].T
     # print(Y.shape)
@@ -1590,18 +1590,19 @@ def test_lpols(data,nT):
 
     nX = X.shape[0]
     for iy,y in enumerate(Y):
-        for h in range(0,nH):
+        for h in range(0,nH+1):
         #     print(nL+h,nT-(nH-h))
         #     print(nL,nT-nH)
         #     print(Y[:,nL+h:nT-(nH-h)].T.shape)
         #     print(X[:,nL:nT-nH].T.shape)
 #             print(X[:,nL:nT-nH].T[:].T)
 #             print(Y[:,nL+h:nT-(nH-h)].T[:].T)
-            ymat = y[nL+h:nT-(nH-h)].T
-            Xmat = np.ones((nT-nL-nH,1))
+            ymat = y[nL-1+h:nT-(nH-h)].T
+            Xmat = np.ones((nT-nL-nH+1,1))
             for l in range(0,nL):
-                Xmat = np.column_stack((Xmat,X[:,nL-l:nT-nH-l].T))
-        #     print(Xmat)
+                Xmat = np.column_stack((Xmat,X[:,nL-1-l:nT-nH-l].T))
+#             print(Xmat)
+#             print(ymat)
             lm = sm.OLS(ymat,exog=Xmat).fit()
 #             print(lm.params[1:nX+1])
 #             print(B[h,iy,:])
@@ -1612,7 +1613,7 @@ def test_lpols(data,nT):
 # import statsmodels.api as sm
 # import statsmodels.formula.api as smf
 
-# nT = 150
+# nT = 80
 # a = np.random.random((100,3))
 # data = np.random.random((nT,10))
 
