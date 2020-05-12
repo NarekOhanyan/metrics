@@ -1128,13 +1128,26 @@ class varm:
 
 # ### LP-OLS
 
-# In[68]:
+# In[156]:
 
 
-def lpols(Xdata,Ydata,nL,nH):
+def lpols(Xdata=None,Ydata=None,Zdata=None,Wdata=None,nL=None,nH=None):
     """
     Function to estimate LP(nL,nH) model using OLS
     """
+    if Xdata is None and Ydata is None:
+        raise Exception
+    else:
+        if Xdata is None:
+            Xdata = Ydata
+        if Ydata is None:
+            Ydata = Xdata
+    if Zdata is not None:
+        (n0,n1) = Zdata.shape
+        nZ = n0
+    else:
+        nZ = 0
+        
     (n0,n1) = Ydata.shape
     nY = n0
     (n0,n1) = Xdata.shape
@@ -1147,11 +1160,15 @@ def lpols(Xdata,Ydata,nL,nH):
         Y = np.row_stack((Y,np.roll(Ydata,-h)))
 
     X = np.array(Xdata)
-
+    if Zdata is not None:
+        X = np.row_stack((X,Zdata))
+    
     Z = np.ones((1,n1))
     for l in range(1,nK+1):
         Z = np.row_stack((Z,np.roll(Xdata,l)))
-
+    if Wdata is not None:
+        Z = np.row_stack((Z,Wdata))
+    
     X = X[:,nK:n1-nH]
     Y = Y[:,nK:n1-nH]
     Z = Z[:,nK:n1-nH]
@@ -1166,7 +1183,7 @@ def lpols(Xdata,Ydata,nL,nH):
     B = (Y@Mz@X.T)@np.linalg.inv(X@Mz@X.T)
     U = Y@Mz - B@X@Mz
     U = U.reshape((nH+1,nY,nT))
-    B = B.T.reshape((nX,nH+1,nY)).transpose((1,2,0)) #.swapaxes(1,2)
+    B = B.T.reshape((nX+nZ,nH+1,nY)).transpose((1,2,0)) #.swapaxes(1,2)
     S = (1/nT)*(U[1]@U[1].T)
     return B, U, S
 
@@ -1189,7 +1206,7 @@ def get_lp_irfs(B,U,S,/,*,method=None,impulse=None,idv=None,M=None):
     return ir,irc,Psi,A0inv
 
 
-# In[26]:
+# In[140]:
 
 
 class lpm:
@@ -1246,7 +1263,7 @@ class lpm:
         (n0,n1) = data.shape
         nK = nL - 1
         
-        B, U, S = lpols(data[:,X_var_indices].T,data[:,Y_var_indices].T,nL,nH)
+        B, U, S = lpols(Xdata=data[:,X_var_indices].T,Ydata=data[:,Y_var_indices].T,nL=nL,nH=nH)
 
 # #         offset = nK
         
@@ -1568,7 +1585,7 @@ class sfm:
 
 # ### Tests
 
-# In[138]:
+# In[148]:
 
 
 def test_lpols(data,nT):
@@ -1610,14 +1627,26 @@ def test_lpols(data,nT):
             assert (abs(lm.params[1:nX+1]-B[h,iy,:])<1e-10).all()
 
 
-# import statsmodels.api as sm
-# import statsmodels.formula.api as smf
+# In[143]:
 
-# nT = 80
-# a = np.random.random((100,3))
-# data = np.random.random((nT,10))
 
-# test_lpols(data,nT)
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+
+
+# In[144]:
+
+
+nT = 80
+a = np.random.random((100,3))
+data = np.random.random((nT,10))
+
+
+# In[154]:
+
+
+test_lpols(data,nT)
+
 
 # MLP = lpm(data,nL=1,nH=1)
 
