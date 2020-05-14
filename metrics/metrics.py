@@ -3,7 +3,7 @@
 
 # # Load packages
 
-# In[1]:
+# In[115]:
 
 
 import numpy as np
@@ -12,7 +12,7 @@ import pandas as pd
 import matplotlib.pyplot as mpl
 
 
-# In[2]:
+# In[116]:
 
 
 class block:
@@ -26,7 +26,7 @@ class block:
 
 # ### OLS
 
-# In[3]:
+# In[117]:
 
 
 def ols(yin,Xin,dfcin=True):
@@ -131,7 +131,7 @@ def ols(yin,Xin,dfcin=True):
     return b,se,V,e,S
 
 
-# In[4]:
+# In[118]:
 
 
 # df = pd.read_csv('testdata.csv')
@@ -139,7 +139,7 @@ def ols(yin,Xin,dfcin=True):
 
 # b,se,V,e,S = ols(df.values[:,0:3],df.values[:,3:13])
 
-# In[5]:
+# In[119]:
 
 
 # S
@@ -154,7 +154,7 @@ def ols(yin,Xin,dfcin=True):
 
 # ## Nelson-Siegel model
 
-# In[6]:
+# In[120]:
 
 
 class nsm:
@@ -240,7 +240,7 @@ class nsm:
 
 # ## VAR model
 
-# In[7]:
+# In[121]:
 
 
 class varms:
@@ -329,7 +329,7 @@ class varms:
 
 # ### VAR-OLS
 
-# In[8]:
+# In[122]:
 
 
 def varols(data,nL):
@@ -356,7 +356,7 @@ def varols(data,nL):
     return c, B, U, S
 
 
-# In[9]:
+# In[123]:
 
 
 @nb.njit
@@ -388,7 +388,7 @@ def varols_njit(data,nL):
 
 # ### VAR simulate
 
-# In[10]:
+# In[124]:
 
 
 def varsim(c,B,U,Y0):
@@ -410,7 +410,7 @@ def varsim(c,B,U,Y0):
     return Y
 
 
-# In[11]:
+# In[125]:
 
 
 @nb.njit
@@ -435,7 +435,7 @@ def varsim_njit(c,B,U,Y0):
 
 # ### get Psi from B
 
-# In[12]:
+# In[126]:
 
 
 def get_Psi_from_B(B,nH):
@@ -448,7 +448,7 @@ def get_Psi_from_B(B,nH):
     return Psi
 
 
-# In[13]:
+# In[127]:
 
 
 @nb.njit
@@ -464,7 +464,7 @@ def get_Psi_from_B_njit(B,nH):
 
 # ### Get A0inv
 
-# In[14]:
+# In[128]:
 
 
 def get_A0inv(method=None,U=None,S=None,idv=None,M=None):
@@ -531,7 +531,7 @@ def get_A0inv(method=None,U=None,S=None,idv=None,M=None):
     return A0inv
 
 
-# In[15]:
+# In[129]:
 
 
 @nb.njit # not used
@@ -618,7 +618,7 @@ def get_A0inv_njit(method=None,U=None,S=None,idv=None,M=None):
 
 # ### IV-identification
 
-# In[16]:
+# In[130]:
 
 
 def iv_block(MU,nM):
@@ -650,7 +650,7 @@ def iv_block(MU,nM):
     return b11,b21
 
 
-# In[17]:
+# In[131]:
 
 
 @nb.njit
@@ -687,7 +687,7 @@ def iv_block_njit(MU,nM):
 
 # ### get SIRF from IRF
 
-# In[18]:
+# In[132]:
 
 
 def get_sirf_from_irf(Psi,A0inv,impulse):
@@ -708,7 +708,7 @@ def get_sirf_from_irf(Psi,A0inv,impulse):
     return ir,irc
 
 
-# In[19]:
+# In[133]:
 
 
 @nb.njit # not used
@@ -732,7 +732,7 @@ def get_sirf_from_irf_njit(Psi,A0inv,impulse):
 
 # ### Bootstrap
 
-# In[20]:
+# In[134]:
 
 
 def bs(Y,c,B,U,S,UM,nL,nY,nH,nT,/,*,method=None,impulse=None,cl=None,ci=None,idv=None,M=None):
@@ -761,7 +761,7 @@ def bs(Y,c,B,U,S,UM,nL,nY,nH,nT,/,*,method=None,impulse=None,cl=None,ci=None,idv
     return ir_,irc_
 
 
-# In[21]:
+# In[135]:
 
 
 @nb.njit # not used
@@ -793,7 +793,7 @@ def bs_njit(Y,c,B,U,S,UM,nL,nY,nH,nT,/,*,method=None,impulse=None,cl=None,ci=Non
 
 # ### get IRFs
 
-# In[22]:
+# In[136]:
 
 
 def get_irfs(Y,c,B,U,S,/,*,nH,method=None,impulse=None,cl=None,ci=None,nR=1000,idv=None,M=None):
@@ -861,7 +861,7 @@ def get_irfs(Y,c,B,U,S,/,*,nH,method=None,impulse=None,cl=None,ci=None,nR=1000,i
 
 # ### VAR
 
-# In[23]:
+# In[137]:
 
 
 class varm:
@@ -1128,7 +1128,7 @@ class varm:
 
 # ### LP-OLS
 
-# In[156]:
+# In[138]:
 
 
 def lpols(Xdata=None,Ydata=None,Zdata=None,Wdata=None,nL=None,nH=None):
@@ -1136,7 +1136,7 @@ def lpols(Xdata=None,Ydata=None,Zdata=None,Wdata=None,nL=None,nH=None):
     Function to estimate LP(nL,nH) model using OLS
     """
     if Xdata is None and Ydata is None:
-        raise Exception
+        raise ValueError('No data provided')
     else:
         if Xdata is None:
             Xdata = Ydata
@@ -1159,7 +1159,7 @@ def lpols(Xdata=None,Ydata=None,Zdata=None,Wdata=None,nL=None,nH=None):
     for h in range(0,nH+1):
         Y = np.row_stack((Y,np.roll(Ydata,-h)))
 
-    X = np.array(Xdata)
+    X = np.asarray(Xdata)
     if Zdata is not None:
         X = np.row_stack((X,Zdata))
     
@@ -1173,12 +1173,6 @@ def lpols(Xdata=None,Ydata=None,Zdata=None,Wdata=None,nL=None,nH=None):
     Y = Y[:,nK:n1-nH]
     Z = Z[:,nK:n1-nH]
 
-#     print(X.shape)
-#     print(X[:,:])
-#     print(Y.shape)
-#     print(Y[:,:])
-#     print(Z.shape)
-#     print(Z[:,:])
     Mz = np.eye(nT) - Z.T@np.linalg.inv(Z@Z.T)@Z
     B = (Y@Mz@X.T)@np.linalg.inv(X@Mz@X.T)
     U = Y@Mz - B@X@Mz
@@ -1188,7 +1182,62 @@ def lpols(Xdata=None,Ydata=None,Zdata=None,Wdata=None,nL=None,nH=None):
     return B, U, S
 
 
-# In[25]:
+# In[139]:
+
+
+@nb.njit
+def lpols_njit(Xdata=None,Ydata=None,Zdata=None,Wdata=None,nL=None,nH=None):
+    """
+    Function to estimate LP(nL,nH) model using OLS
+    """
+    if Xdata is None and Ydata is None:
+        raise ValueError('No data provided')
+    else:
+        if Xdata is None:
+            Xdata = Ydata
+        if Ydata is None:
+            Ydata = Xdata
+    if Zdata is not None:
+        (n0,n1) = Zdata.shape
+        nZ = n0
+    else:
+        nZ = 0
+        
+    (n0,n1) = Ydata.shape
+    nY = n0
+    (n0,n1) = Xdata.shape
+    nT = n1 - nL - nH + 1
+    nX = n0
+    nK = nL - 1
+
+    Y = np.full((0,n1),np.nan)
+    for h in range(0,nH+1):
+        Y = np.row_stack((Y,np.roll(Ydata,-h)))
+
+    X = np.asarray(Xdata)
+    if Zdata is not None:
+        X = np.row_stack((X,Zdata))
+    
+    Z = np.ones((1,n1))
+    for l in range(1,nK+1):
+        Z = np.row_stack((Z,np.roll(Xdata,l)))
+    if Wdata is not None:
+        Z = np.row_stack((Z,Wdata))
+    
+    X = np.ascontiguousarray(X[:,nK:n1-nH])
+    Y = np.ascontiguousarray(Y[:,nK:n1-nH])
+    Z = np.ascontiguousarray(Z[:,nK:n1-nH])
+
+    Mz = np.eye(nT) - Z.T@np.linalg.inv(Z@Z.T)@Z
+    B = np.linalg.solve(X@Mz@X.T,X@Mz@Y.T).T
+    U = Y@Mz - B@X@Mz
+    U = U.reshape((nH+1,nY,nT))
+    B = B.T.reshape((nX+nZ,nH+1,nY)).transpose((1,2,0)) #.swapaxes(1,2)
+    S = (1/nT)*(U[1]@U[1].T)
+    return B, U, S
+
+
+# In[140]:
 
 
 def get_lp_irfs(B,U,S,/,*,method=None,impulse=None,idv=None,M=None):
@@ -1206,7 +1255,7 @@ def get_lp_irfs(B,U,S,/,*,method=None,impulse=None,idv=None,M=None):
     return ir,irc,Psi,A0inv
 
 
-# In[140]:
+# In[141]:
 
 
 class lpm:
@@ -1263,7 +1312,7 @@ class lpm:
         (n0,n1) = data.shape
         nK = nL - 1
         
-        B, U, S = lpols(Xdata=data[:,X_var_indices].T,Ydata=data[:,Y_var_indices].T,nL=nL,nH=nH)
+        B, U, S = lpols_njit(Xdata=data[:,X_var_indices].T,Ydata=data[:,Y_var_indices].T,nL=nL,nH=nH)
 
 # #         offset = nK
         
@@ -1470,7 +1519,7 @@ class lpm:
 
 # ### SFM
 
-# In[27]:
+# In[142]:
 
 
 class sfm:
@@ -1585,10 +1634,10 @@ class sfm:
 
 # ### Tests
 
-# In[148]:
+# In[143]:
 
 
-def test_lpols(data,nT):
+def test_lpols_vs_sm_OLS(data,nT):
     
 #     nT = 100
 #     a = np.random.random((100,3))
@@ -1627,14 +1676,36 @@ def test_lpols(data,nT):
             assert (abs(lm.params[1:nX+1]-B[h,iy,:])<1e-10).all()
 
 
-# In[143]:
+# In[144]:
+
+
+def test_lpols_vs_lpols_njit(data,nT):
+    
+#     nT = 100
+#     a = np.random.random((100,3))
+#     data = np.random.random((nT,10))
+    
+    nL, nH = 3, 2
+
+    Y=data[:,:5].T
+    # print(Y.shape)
+    X=data[:,:].T
+    # print(X.shape)
+
+    B1,U,S = lpols(Xdata=X,Ydata=Y,nL=nL,nH=nL)
+    B2,U,S = lpols_njit(Xdata=X,Ydata=Y,nL=nL,nH=nL)
+
+    assert (abs(B1-B2)<1e-10).all()
+
+
+# In[145]:
 
 
 import statsmodels.api as sm
 import statsmodels.formula.api as smf
 
 
-# In[144]:
+# In[146]:
 
 
 nT = 80
@@ -1642,10 +1713,16 @@ a = np.random.random((100,3))
 data = np.random.random((nT,10))
 
 
-# In[154]:
+# In[147]:
 
 
-test_lpols(data,nT)
+test_lpols_vs_sm_OLS(data,nT)
+
+
+# In[148]:
+
+
+test_lpols_vs_lpols_njit(data,nT)
 
 
 # MLP = lpm(data,nL=1,nH=1)
