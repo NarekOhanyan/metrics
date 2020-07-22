@@ -159,7 +159,7 @@ def ols(yin,Xin,dfcin=True):
 
 class nsm:
         
-    def __init__(self,yields,tau,lam):
+    def __init__(self,yields,tau,lam,classic=True):
         
         if len(yields.shape) == 1:
             yields = yields[None,:]
@@ -171,11 +171,11 @@ class nsm:
         self.yields.columns = tau
         self.tau = tau
         self.lam = lam
+        self.classic = classic
         self.fit()
         
     def getLoadings(self,tau,lam):
-        classic = False
-        if classic:
+        if self.classic:
             b1l = np.ones_like(tau)
             b2l = np.array((1-np.exp(-lam*tau))/(lam*tau))
             b3l = np.array((1-np.exp(-lam*tau))/(lam*tau)-np.exp(-lam*tau))
