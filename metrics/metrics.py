@@ -8,108 +8,64 @@ import matplotlib.pyplot as mpl
 class block:
     pass
 
-# %% OLS
-def ols(yin,Xin,dfcin=True):
-    y = yin.copy()
-    X = Xin.copy()
-    dfc = bool(dfcin)
+# %%
+def check_data(Ydata, Xdata, add_constant):
+    Ydata = Ydata.reshape((-1,Ydata.shape[1]))
+    nY, _ = Ydata.shape
+    nC = 1 if add_constant else 0
+    cXdata = np.row_stack((np.ones((nC,Xdata.shape[1])),Xdata))
+    YXdata = np.row_stack((Ydata,cXdata))
+    YXdata = YXdata[:,~np.isnan(YXdata).any(axis=0)]
+    return YXdata[:nY], YXdata[nY:], cXdata
 
-    if len(y.shape) == 1:
-        y = y[:,None]
+# %% ols in column format
+def ols_v(y, X, dfc=True):
+    nN,nX = X.shape
+    y = y.reshape((-1,1))
+    b = np.linalg.solve(X.T@X,X.T@y)
+    e = y-X@b
+    df = nN-nX if dfc else nN
+    S = (1/df)*(e.T@e)
+    V = S*np.linalg.inv(X.T@X)
+    se = np.sqrt(np.diagonal(V)).reshape((-1,1))
+    return b, se, V, e, S
 
-    if 0 not in np.var(X,axis=0):
-        X = np.column_stack((np.ones((X.shape[0],1)),X))
-        print('The data passed does not contain a constant. Automatically adding a constant')
+# %% ols in row format
+def ols_h(y, X, dfc=True):
+    nX,nN = X.shape
+    y = np.squeeze(y)
+    b = (y@X.T)@np.linalg.inv(X@X.T)
+    e = y-b@X
+    df = nN-nX if dfc else nN
+    S = (1/df)*(e@e.T)
+    V = S*np.linalg.inv(X@X.T)
+    se = np.squeeze(np.sqrt(np.diagonal(V)).T)
+    return b, se, V, e, S
 
-    nN,nY = y.shape
-    _,nK = X.shape
+# %% OLS with one dependent variable y
+def OLS_h(Ydata, Xdata, add_constant=True, dfc=True):
+    Y, X, cXdata = check_data(Ydata,Xdata,add_constant)
+    b, se, V, _, S = ols_h(Y, X, dfc)
+    e = Ydata-b@cXdata
+    return b, se, V, e, S
 
-    if nY == 1:
-        yX = np.column_stack((y,X))
-        yXnan = np.isnan(yX).any(axis=1)
-        y[yXnan,:],X[yXnan,:] = 0,0
-        b = np.linalg.solve(X.T@X,X.T@y)
-        e = y-X@b
-        invXX = np.linalg.inv(X.T@X)
-        nN = nN-np.nansum(yXnan,axis=0)
-        if dfc:
-            df = nN-nK
-        else:
-            df = nN
-        S = (1/df)*(e.T@e)[0]
-        V = S*invXX
-        se = np.sqrt(np.diagonal(V)).T
-        e[yXnan] = np.nan
-    else:
-#     ynan = np.isnan(y)
-#     Xrownan = np.isnan(X).any(axis=1)
-#     resnan = ynan | Xrownan[:,None]
-#     print(ynan)
-#     y_ = y[~Xnan.any(axis=1)]
-#     X_ = X[~Xnan.any(axis=1),:]
-#     y[resnan] = 0
-#     X[Xrownan,:] = 0
-
-        try:
-            yy = y.T.reshape((1,nY*nN)).T
-            XX = np.kron(np.eye(nY),X)
-            yyXX = np.column_stack((yy,XX))
-            yyXXnan = np.isnan(yyXX).any(axis=1)
-            yy[yyXXnan,:] = 0
-            XX[yyXXnan,:] = 0
-            XXTXX = XX.T@XX
-            bb = np.linalg.solve(XXTXX, XX.T@yy)
-            ee = yy-XX@bb
-            ee[yyXXnan,:] = 0
-            b = bb.reshape((nY,nK)).T
-            e = ee.reshape((nY,nN)).T
-            b = np.linalg.solve(X.T@X,X.T@y)
-            e = y-X@b
-            resnan = yyXXnan.reshape((nY,nN)).T
-            e[resnan] = 0
-            invXX = np.array([np.linalg.inv(XXTXX[i*nK:(i+1)*nK,i*nK:(i+1)*nK]) for i in range(nY)])
-        except:
-            ynan = np.isnan(y)
-            Xrownan = np.isnan(X).any(axis=1)
-            b = np.full((nK,nY),np.nan)
-            e = np.full((nN,nY),np.nan)
-            resnan = np.full((nN,nY),True)
-            invXX = np.full((nY,nK,nK),np.nan)
-            for idy in range(nY):
-                y_,X_ = y[:,idy,None],X[:,:]
-                yXnan = ynan[:,idy] | Xrownan
-        #         print(yXnan)
-                y_[yXnan,:],X[yXnan,:] = 0,0
-                b_ = np.linalg.solve(X_.T@X_, X_.T@y_)
-                e_ = y_-X_@b_
-        #         print(e_.shape)
-                b[:,idy,None] = b_
-        #         print(b)
-                e[:,idy,None] = e_
-                resnan[:,idy] = yXnan
-                invXX[idy] = np.linalg.inv(X_.T@X_)
-
-    #     print(e)
-
-    #     print(yy.T.reshape((nY,nN)).T)
-        nNN = np.array([nN for i in range(nY)])-np.nansum(resnan,axis=0)
-    #     print(np.diagonal(e.T@e))
-        #     np.full_like(y,np.nan)
-    #     print(nN)
-        if dfc:
-            df = np.array([[min(nNN[col],nNN[row])-nK for col in range(nY)] for row in range(nY)])
-        else:
-            df = np.array([[min(nNN[col],nNN[row]) for col in range(nY)] for row in range(nY)])
-
-    #     print(df)
-        S = (1/df)*(e.T@e)
-        V = np.diagonal(S)[:,None,None]*invXX
-        se = np.sqrt([np.diagonal(V[i]) for i in range(nY)]).T
-    #     for idy in range(nY):
-    #         V[idy] = Sigma2[idy]*np.linalg.inv(X.T@X)
-        e[resnan] = np.nan
-    return b,se,V,e,S
-
+# %% OLS with many dependent variables y
+def OLS_block_h(Ydata, Xdata, add_constant=True, dfc=True):
+    assert ~np.isnan(Ydata).any() and ~np.isnan(Xdata).any(), 'data should not contain NaNs'
+    Y, X, _ = check_data(Ydata,Xdata,add_constant)
+    nY, nN = Y.shape
+    nX, nN = X.shape
+    Yy = Y.reshape((1,nY*nN))
+    Xx = np.kron(np.eye(nY),X)
+    b, _, _, e, _ = ols_h(Yy, Xx,dfc)
+    B = b.reshape((nY,nX))
+    E = e.reshape((nY,nN))
+    df = nN-nX if dfc else nN
+    S = (1/df)*(E@E.T)
+    invXx = np.array([np.linalg.inv(X@X.T) for iY in range(nY)])
+    V = np.diagonal(S).reshape((-1,1,1))*invXx
+    Se = np.array([np.sqrt(np.diagonal(V[iY])) for iY in range(nY)])
+    return B, Se, V, E, S
 
 # %% Nelson-Siegel model
 class nsm:
