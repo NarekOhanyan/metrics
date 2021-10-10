@@ -1,17 +1,14 @@
-# # Load packages
+# %% Load packages
 import numpy as np
 import numba as nb
 import pandas as pd
 import matplotlib.pyplot as mpl
 
-
+# %%
 class block:
-    def __init__(self):
-        pass
+    pass
 
-# # Functions
-# ## Linear model
-# ### OLS
+# %% OLS
 def ols(yin,Xin,dfcin=True):
     y = yin.copy()
     X = Xin.copy()
@@ -68,8 +65,8 @@ def ols(yin,Xin,dfcin=True):
             e = ee.reshape((nY,nN)).T
             b = np.linalg.solve(X.T@X,X.T@y)
             e = y-X@b
-            e[resnan] = 0
             resnan = yyXXnan.reshape((nY,nN)).T
+            e[resnan] = 0
             invXX = np.array([np.linalg.inv(XXTXX[i*nK:(i+1)*nK,i*nK:(i+1)*nK]) for i in range(nY)])
         except:
             ynan = np.isnan(y)
@@ -114,7 +111,7 @@ def ols(yin,Xin,dfcin=True):
     return b,se,V,e,S
 
 
-# ## Nelson-Siegel model
+# %% Nelson-Siegel model
 class nsm:
 
     def __init__(self,yields,tau,lam,classic=True):
@@ -184,7 +181,7 @@ class nsm:
         mpl.scatter(tau,self.yields.loc[index].values);
         mpl.plot(ptau,self.curve.loc[index].values);
 
-# ## VAR model
+# %% VAR model
 class varms:
 
     def __init__(self,data,nP):
@@ -268,7 +265,7 @@ class varms:
             self.iv.idv = idv
             self.iv.ins_names = ins_names
 
-# ### VAR-OLS
+# %% VAR-OLS
 def varols(data,nL):
     """
     Function to estimate VAR(P) model with P = nL using OLS
@@ -292,7 +289,7 @@ def varols(data,nL):
     S = (1/(nT-nL*nY-1))*(U@U.T)
     return c, B, U, S
 
-
+# %% VAR-OLS njit
 @nb.njit
 def varols_njit(data,nL):
     """
@@ -320,7 +317,7 @@ def varols_njit(data,nL):
     return c, B, U, S
 
 
-# ### VAR simulate
+# %% VAR simulate
 def varsim(c,B,U,Y0):
     (nY,nT) = U.shape
     (_,nL) = Y0.shape
@@ -339,7 +336,7 @@ def varsim(c,B,U,Y0):
         Y[:,t] = Y_t
     return Y
 
-
+# %% VAR simulate njit
 @nb.njit
 def varsim_njit(c,B,U,Y0):
     (nY,nT) = U.shape
@@ -359,7 +356,7 @@ def varsim_njit(c,B,U,Y0):
         # Y[:,t] = Y_t
     return Y
 
-# ### get Psi from B
+# %% get Psi from B
 def get_Psi_from_B(B,nH):
     (nL,nY,_) = B.shape
     Psi = np.zeros((nH+1,nY,nY))
@@ -369,7 +366,7 @@ def get_Psi_from_B(B,nH):
             Psi[h] += Psi[h-i-1]@B[i]
     return Psi
 
-
+# %% get Psi from B njit
 @nb.njit
 def get_Psi_from_B_njit(B,nH):
     (nL,nY,_) = B.shape
@@ -380,7 +377,7 @@ def get_Psi_from_B_njit(B,nH):
             Psi[h] += np.ascontiguousarray(Psi[h-i-1])@np.ascontiguousarray(B[i])
     return Psi
 
-# ### Get A0inv
+# %% Get A0inv
 def get_A0inv(method=None,U=None,S=None,idv=None,M=None):
     (nY,nT) = U.shape
     if method == None:
@@ -444,7 +441,7 @@ def get_A0inv(method=None,U=None,S=None,idv=None,M=None):
 
     return A0inv
 
-
+# %% get A0inv
 @nb.njit # not used
 def get_A0inv_njit(method=None,U=None,S=None,idv=None,M=None):
     (nY,nT) = U.shape
@@ -588,8 +585,7 @@ def iv_block_njit(MU,nM):
     b21 = b21_S1_1@S1
     return b11,b21
 
-# ### get SIRF from IRF
-
+# %% get SIRF from IRF
 def get_sirf_from_irf(Psi,A0inv,impulse):
     if impulse is None:
         impulse = 'unit'
@@ -607,7 +603,7 @@ def get_sirf_from_irf(Psi,A0inv,impulse):
     ir,irc = get_ir(Psi,A0inv,impulse_scale)
     return ir,irc
 
-
+# %% get SIRF from IRF njit
 @nb.njit # not used
 def get_sirf_from_irf_njit(Psi,A0inv,impulse):
     if impulse is None:
@@ -626,8 +622,7 @@ def get_sirf_from_irf_njit(Psi,A0inv,impulse):
     ir,irc = get_ir(Psi,A0inv,impulse_scale)
     return ir,irc
 
-# ### Bootstrap
-
+# %% Bootstrap
 def bs(Y,c,B,U,S,UM,nL,nY,nH,nT,/,*,method=None,impulse=None,cl=None,ci=None,idv=None,M=None):
     Y0_r = Y[:,:nL]
     if ci == 'bs':
@@ -653,7 +648,7 @@ def bs(Y,c,B,U,S,UM,nL,nY,nH,nT,/,*,method=None,impulse=None,cl=None,ci=None,idv
     ir_,irc_ = get_sirf_from_irf(Psi_,A0inv_,impulse)
     return ir_,irc_
 
-
+# %% Bootstrap njit
 @nb.njit # not used
 def bs_njit(Y,c,B,U,S,UM,nL,nY,nH,nT,/,*,method=None,impulse=None,cl=None,ci=None,idv=None,M=None):
     Y0_r = Y[:,:nL]
@@ -680,8 +675,7 @@ def bs_njit(Y,c,B,U,S,UM,nL,nY,nH,nT,/,*,method=None,impulse=None,cl=None,ci=Non
     ir_,irc_ = get_sirf_from_irf_njit(Psi_,A0inv_,impulse)
     return ir_,irc_
 
-# ### get IRFs
-
+# %% get IRFs
 def get_irfs(Y,c,B,U,S,/,*,nH,method=None,impulse=None,cl=None,ci=None,nR=1000,idv=None,M=None):
     (nL,nY,_) = B.shape
     (_,n1) = Y.shape
@@ -748,7 +742,7 @@ def get_irfs(Y,c,B,U,S,/,*,nH,method=None,impulse=None,cl=None,ci=None,nR=1000,i
 
 class varm:
 
-    # ===============================================================================================
+    # ==============================================================================================
 
     def __init__(self,data,/,*,nL=None,var_names=None,sample=None):
 
@@ -777,7 +771,7 @@ class varm:
 
         self.set_sample(sample)
 
-    # ===============================================================================================
+    # ==============================================================================================
 
     def fit(self):
         isample = self.model.spec.isample
@@ -802,7 +796,7 @@ class varm:
         if hasattr(self.model.svar,'iv'):
             self.irf(method='iv')
 
-    # ===============================================================================================
+    # ==============================================================================================
 
     def irf(self,nH=None,method=None,impulse=None,cl=None,ci=None,nR=None,idv=None,ins_names=None):
 
@@ -916,7 +910,7 @@ class varm:
         self.model.irfs.rd.ir = ir
         self.model.irfs.rd.irc = irc
 
-    # ===============================================================================================
+    # ==============================================================================================
 
     def set_sample(self,sample=None):
 
@@ -956,7 +950,7 @@ class varm:
 
         self.fit()
 
-    # ===============================================================================================
+    # ==============================================================================================
 
     def set_lag_length(self,nL):
 
@@ -967,7 +961,7 @@ class varm:
         if hasattr(self.model.svar,'iv'):
             self.irf(method='iv')
 
-    # ===============================================================================================
+    # ==============================================================================================
 
     def set_horizon(self,nH):
 
@@ -995,6 +989,7 @@ class varm:
 # ### LP
 # ### LP-OLS
 
+# %% lpols
 def lpols(Xdata=None,Ydata=None,Zdata=None,Wdata=None,nL=None,nH=None):
     """
     Function to estimate LP(nL,nH) model using OLS
@@ -1115,7 +1110,7 @@ def get_lp_irfs(B,U,S,/,*,method=None,impulse=None,idv=None,M=None):
 
 class lpm:
 
-    # ===============================================================================================
+    # ==============================================================================================
 
     def __init__(self,data,/,*,nL=None,nH=None,Y_var_names=None,X_var_names=None,sample=None):
 
@@ -1150,7 +1145,7 @@ class lpm:
 
         self.set_sample(sample)
 
-    # ===============================================================================================
+    # ==============================================================================================
 
     def fit(self):
         isample = self.model.spec.isample
@@ -1232,7 +1227,7 @@ class lpm:
         if hasattr(self.model.slp,'iv'):
             self.irf(method='iv')
 
-    # ===============================================================================================
+    # ==============================================================================================
 
     def irf(self,method=None,impulse=None,idv=None,ins_names=None):
 
@@ -1309,7 +1304,7 @@ class lpm:
         self.model.irfs.rd.ir = ir
         self.model.irfs.rd.irc = irc
 
-    # ===============================================================================================
+    # ==============================================================================================
 
     def set_sample(self,sample=None):
 
@@ -1347,7 +1342,7 @@ class lpm:
 
         self.fit()
 
-    # ===============================================================================================
+    # ==============================================================================================
 
     def set_lag_length(self,nL):
 
@@ -1358,7 +1353,7 @@ class lpm:
         if hasattr(self.model.slp,'iv'):
             self.irf(method='iv')
 
-    # ===============================================================================================
+    # ==============================================================================================
 
     def set_horizon(self,nH):
 
@@ -1480,3 +1475,5 @@ class sfm:
         lam = np.sqrt(nN)*eigVec[:,:nFF].T
         fac = (1/nN)*(X@lam.T)
         return fac, lam
+
+# %%
