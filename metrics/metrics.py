@@ -23,6 +23,19 @@ class spec:
 
 # %%
 def check_data(Ydata, Xdata, add_constant):
+    """
+    Check data for NaNs and add a constant if requested
+
+    Args:
+        Ydata (nY, n1): Ydata in row format.
+        Xdata (nX, n1): Xdata in row format.
+        add_constant (bool,optional): Add a constant to Xdata. Defaults to True
+
+    Returns:
+        (nY, nN): Ydata without NaNs
+        (nX, nN): Xdata without NaNs
+        (nC+nX, n1): Xdata with constant if requested
+    """
     Ydata = Ydata.reshape((-1,Ydata.shape[1]))
     nY, _ = Ydata.shape
     nC = 1 if add_constant else 0
@@ -33,6 +46,21 @@ def check_data(Ydata, Xdata, add_constant):
 
 # %% ols in column format
 def ols_v(y, X, dfc=True):
+    """
+    OLS with data in column format
+
+    Args:
+        y (nN, 1): y matrix.
+        X (nN, nX): X matrix.
+        dfc (bool, optional): Degrees of freedom correction. Defaults to True.
+
+    Returns:
+        (nX, 1): parameter estimates
+        (nX, 1): standard errors of parameter estimates
+        (nX, nX): variance matrix of parameter estimates
+        (nN, 1): residuals
+        (1, 1): mean squared error
+    """
     nN,nX = X.shape
     y = y.reshape((-1,1))
     b = np.linalg.solve(X.T@X,X.T@y)
@@ -45,6 +73,21 @@ def ols_v(y, X, dfc=True):
 
 # %% ols in row format
 def ols_h(y, X, dfc=True):
+    """
+    OLS with data in row format
+
+    Args:
+        y (nN,): y matrix.
+        X (nX, nN): X matrix.
+        dfc (bool, optional): Degrees of freedom correction. Defaults to True.
+
+    Returns:
+        (nX,): parameter estimates
+        (nX,): standard errors of parameter estimates
+        (nX, nX): variance matrix of parameter estimates
+        (nN,): residuals
+        (1,): mean squared error
+    """
     nX,nN = X.shape
     y = np.squeeze(y)
     b = (y@X.T)@np.linalg.inv(X@X.T)
@@ -277,8 +320,8 @@ class nsm:
     def plot(self,index):
         tau = self.tau
         ptau = self.ptau
-        mpl.scatter(tau,self.yields.loc[index].values);
-        mpl.plot(ptau,self.curve.loc[index].values);
+        mpl.scatter(tau,self.yields.loc[index].values)
+        mpl.plot(ptau,self.curve.loc[index].values)
 
 # %% VAR model
 class varms:
@@ -374,7 +417,7 @@ def varols(data,nL):
     nY = n0
     Z = np.ones((1,n1))
 
-    for p in range(1,1+nL):
+    for p in range(1,nL+1):
         Z = np.row_stack((Z,np.roll(data,p)))
 
     Z = Z[:,nL:]
@@ -399,7 +442,7 @@ def varols_njit(data,nL):
     nY = n0
     Z = np.ones((1,n1))
 
-    for p in range(1,1+nL):
+    for p in range(1,nL+1):
         Z = np.row_stack((Z,np.roll(data,p)))
 
     Z = np.ascontiguousarray(Z[:,nL:])
@@ -691,7 +734,7 @@ def get_sirf_from_irf(Psi,A0inv,impulse):
     if isinstance(impulse,str) and impulse == 'unit':
         impulse_scale = np.diag(1/np.diag(A0inv))
     elif isinstance(impulse,str) and impulse == '1sd':
-        impulse_scale = np.eye(nY)
+        impulse_scale = np.eye(A0inv.shape[0])
     else:
         impulse_scale = impulse*np.diag(1/np.diag(A0inv))
     def get_ir(Psi,A0inv,impulse_scale):
@@ -710,7 +753,7 @@ def get_sirf_from_irf_njit(Psi,A0inv,impulse):
     if impulse == 'unit':
         impulse_scale = np.diag(1/np.diag(A0inv))
     elif impulse == '1sd':
-        impulse_scale = np.eye(nY)
+        impulse_scale = np.eye(A0inv.shape[0])
     else:
         impulse_scale = impulse*np.diag(1/np.diag(A0inv))
     def get_ir(Psi,A0inv,impulse_scale):
@@ -1562,7 +1605,7 @@ class sfm:
                 axes[0].plot(range(1,r_max+1),IC,'-o')
                 axes[0].set_xticks(range(1,r_max+1))
                 axes[0].set_xlim((0,r_max+1))
-                axes[0].set_title('Bai & Ng Criterion');
+                axes[0].set_title('Bai & Ng Criterion')
                 axes[1].plot(range(1,r_max+1),eigVal[:r_max],'-o')
                 axes[1].set_xticks(range(1,r_max+1))
                 axes[1].set_xlim((0,r_max+1))
