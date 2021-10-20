@@ -98,17 +98,8 @@ def ols_h(y, X, dfc=True):
     se = np.squeeze(np.sqrt(np.diagonal(V)).T)
     return b, se, V, e, S
 
-# %% OLS with one dependent variable y
-def OLS_h(Ydata, Xdata, add_constant=True, dfc=True):
-    Y, X, cXdata = check_data(Ydata,Xdata,add_constant)
-    b, se, V, _, S = ols_h(Y, X, dfc)
-    e = Ydata-b@cXdata
-    return b, se, V, e, S
-
 # %% OLS with many dependent variables y
-def OLS_block_h(Ydata, Xdata, add_constant=True, dfc=True):
-    assert ~np.isnan(Ydata).any() and ~np.isnan(Xdata).any(), 'data should not contain NaNs'
-    Y, X, _ = check_data(Ydata,Xdata,add_constant)
+def ols_b_h(Y, X, dfc=True):
     nY, nN = Y.shape
     nX, nN = X.shape
     Yy = Y.reshape((1,nY*nN))
@@ -121,6 +112,20 @@ def OLS_block_h(Ydata, Xdata, add_constant=True, dfc=True):
     invXx = np.array([np.linalg.inv(X@X.T) for iY in range(nY)])
     V = np.diagonal(S).reshape((-1,1,1))*invXx
     Se = np.array([np.sqrt(np.diagonal(V[iY])) for iY in range(nY)])
+    return B, Se, V, E, S
+
+# %% OLS with one dependent variable y
+def OLS_h(Ydata, Xdata, add_constant=True, dfc=True):
+    Y, X, cXdata = check_data(Ydata,Xdata,add_constant)
+    b, se, V, _, S = ols_h(Y, X, dfc)
+    e = Ydata-b@cXdata
+    return b, se, V, e, S
+
+# %% OLS with many dependent variables y
+def OLS_b_h(Ydata, Xdata, add_constant=True, dfc=True):
+    assert ~np.isnan(Ydata).any() and ~np.isnan(Xdata).any(), 'data should not contain NaNs'
+    Y, X, _ = check_data(Ydata,Xdata,add_constant)
+    B, Se, V, E, S = ols_b_h(Y, X, dfc)
     return B, Se, V, E, S
 
 # %%
