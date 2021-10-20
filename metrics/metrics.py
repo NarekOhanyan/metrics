@@ -2,10 +2,23 @@
 import numpy as np
 import numba as nb
 import pandas as pd
+import scipy.stats as spstats
 import matplotlib.pyplot as mpl
 
 # %%
 class block:
+    pass
+
+# %%
+class data:
+    pass
+
+# %%
+class est:
+    pass
+
+# %%
+class spec:
     pass
 
 # %%
@@ -66,6 +79,136 @@ def OLS_block_h(Ydata, Xdata, add_constant=True, dfc=True):
     V = np.diagonal(S).reshape((-1,1,1))*invXx
     Se = np.array([np.sqrt(np.diagonal(V[iY])) for iY in range(nY)])
     return B, Se, V, E, S
+
+# %%
+class ardlm_irfs:
+
+    def __init__(self, irf, std, irfc, stdc):
+        self.Irf, self.Std, self.Irfc, self.Stdc = irf, std, irfc, stdc
+
+    def Irf_q(self,q):
+        return self.Irf + spstats.norm.ppf(q)*self.Std
+
+    def Irfc_q(self,q):
+        return self.Irfc + spstats.norm.ppf(q)*self.Stdc
+
+# %% ARDL
+class ardlm:
+
+    def __init__(self, Ydata, Xdata, /, *, Zdata=None, nLy=None, nLx=None, nH=12, nR=100, add_constant=True):
+
+        self.Data = data()
+        self.Spec = spec()
+        Ydata, Xdata, Zdata = self.do_data(Ydata, Xdata, Zdata)
+        self.Data.Ydata, self.Data.Xdata, self.Data.Zdata = Ydata, Xdata, Zdata
+        self.add_constant = add_constant
+        self.Spec.nLy, self.Spec.nLx = nLy, nLx
+        self.Spec.nC = 1 if add_constant else 0
+
+        self.fit()
+        self.irf(nH,nR)
+
+    def fit(self):
+
+        nC, nLy, nLx = self.Spec.nC, self.Spec.nLy, self.Spec.nLx
+        Ydata, Xdata, Zdata = self.Data.Ydata, self.Data.Xdata, self.Data.Zdata
+
+        y, X, Z = Ydata.values.T, Xdata.values.T, Zdata.values.T
+
+        n1 = y.shape[1]
+        nL = max(nLy,nLx)
+        nT = n1 - nL
+
+        Y = y.reshape(1,-1)
+
+        W = np.ones((nC,n1))
+        W = np.row_stack((W,Z))
+        for l in range(1,nLy+1):
+            W = np.row_stack((W,np.roll(y,l)))
+        for l in range(1,nLx+1):
+            W = np.row_stack((W,np.roll(X,l)))
+
+        (nY,_), (nX,_), (nZ,_), (nW,_) = Y.shape, X.shape, Z.shape, W.shape
+
+        Y, W = Y[:,nL:], W[:,nL:]
+
+        B, Se, V, E, S = ols_h(Y, W)
+
+        Bc, Bz, By, Bx = np.split(B,np.cumsum([nC,nZ,nLy*nY]))
+        SEc, SEz, SEy, SEx = np.split(Se,np.cumsum([nC,nZ,nLy*nY]))
+
+        Bc, Bx = np.squeeze(Bc), np.squeeze(Bx.reshape((nLx,nX)).T)
+
+        self.Est = est()
+        self.Est.B, self.Est.Se, self.Est.V, self.Est.E, self.Est.S = B, Se, V, E, S
+        self.Est.Bc, self.Est.Bz, self.Est.By, self.Est.Bx = Bc, Bz, By, Bx
+        self.Est.SEc, self.Est.SEz, self.Est.SEy, self.Est.SEx = SEc, SEz, SEy, SEx
+        self.Spec.nY, self.Spec.nX, self.Spec.nZ, self.Spec.nW = nY, nX, nZ, nW
+
+        return self
+
+    def irf(self,nH,nR):
+
+        B, By, Bx, V = self.Est.B, self.Est.By, self.Est.Bx, self.Est.V
+        nLy, nLx = self.Spec.nLy, self.Spec.nLx
+        nC, nY, nX, nZ = self.Spec.nC, self.Spec.nY, self.Spec.nX, self.Spec.nZ
+
+        Irf, Irfc = self.get_irf(By, Bx, nLy, nLx, nY, nX, nH)
+        Irf_std, Irfc_std = self.get_irf_std(B, V, nLy, nLx, nC, nY, nX, nZ, nH, nR)
+
+        self.Irfs = ardlm_irfs(Irf, Irf_std, Irfc, Irfc_std)
+        self.Irfs.nH, self.Irfs.nR = nH, nR
+
+        return self
+
+    def get_irf(self, By, Bx, nLy, nLx, nY, nX, nH):
+
+        Irf = np.full((nX,nH+1),np.nan)
+
+        By = np.pad(By.reshape((nY,-1)),((0,0),(0,nH-nLy+1)))
+        Bx = np.pad(Bx.reshape((nX,-1)),((0,0),(0,nH-nLx+1)))
+
+        Bx = np.column_stack((np.zeros((nX,1)),Bx))
+        for h in range(nH+1):
+            for iX in range(nX):
+                Irf[iX,h] = Irf[iX,:h][::-1]@By[0,:h] + Bx[iX,h]
+
+        return Irf, np.cumsum(Irf,axis=1)
+
+    def get_irf_std(self, B, V, nLy, nLx, nC, nY, nX, nZ, nH, nR):
+
+        Irf_R = np.full((nR,nX,nH+1),np.nan)
+        Irfc_R = np.full((nR,nX,nH+1),np.nan)
+
+        B_R = np.random.multivariate_normal(B,V,size=nR)
+        for r in range(nR):
+            B_r = B_R[r].reshape((1,-1))
+            _, _, By_r, Bx_r = np.split(B_r,np.cumsum([nC,nZ,nLy*nY]),axis=1)
+            irf_r, cirf_r = self.get_irf(By_r, Bx_r, nLy, nLx, nY, nX, nH)
+            Irf_R[r], Irfc_R[r] = irf_r, cirf_r
+
+        Irf_Std = Irf_R.std(axis=0)
+        Irfc_Std = Irfc_R.std(axis=0)
+
+        return Irf_Std, Irfc_Std
+
+    def do_data(self, Ydata, Xdata, Zdata):
+
+        def make_df(data):
+            if isinstance(data,np.ndarray) or isinstance(data,pd.Series):
+                data = pd.DataFrame(data)
+            assert data.shape[0] > data.shape[1], 'data must be in column format'
+            return data
+
+        if Zdata is None:
+            Zdata = np.full((Ydata.shape[0],0),np.nan)
+
+        Ydata, Xdata, Zdata = make_df(Ydata), make_df(Xdata), make_df(Zdata)
+
+        assert Ydata.shape[1] == 1, 'Ydata must contain only one column'
+        assert Ydata.shape[0] == Xdata.shape[0] == Zdata.shape[0], 'data must have the same length'
+
+        return Ydata, Xdata, Zdata
 
 # %% Nelson-Siegel model
 class nsm:
