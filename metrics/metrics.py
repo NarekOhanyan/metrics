@@ -24,6 +24,13 @@ class spec:
     pass
 
 # %%
+class model:
+    def __init__(self):
+        self.Data = data()
+        self.Est = est()
+        self.Spec = spec()
+
+# %%
 @nb.njit
 def C(arr):
     return np.ascontiguousarray(arr)
@@ -131,12 +138,11 @@ class ardlm_irfs:
         return self.Irfc + spstats.norm.ppf(q)*self.Stdc
 
 # %% ARDL
-class ardlm:
+class ardlm(model):
 
     def __init__(self, Ydata, Xdata, /, *, Zdata=None, nLy=None, nLx=None, nH=12, nR=100, add_constant=True):
 
-        self.Data = data()
-        self.Spec = spec()
+        super().__init__()
         Ydata, Xdata, Zdata = self.do_data(Ydata, Xdata, Zdata)
         self.Data.Ydata, self.Data.Xdata, self.Data.Zdata = Ydata, Xdata, Zdata
         self.add_constant = add_constant
@@ -172,12 +178,13 @@ class ardlm:
 
         B, Se, V, E, S = ols_h(Y, W)
 
+        B, Se = np.squeeze(B), np.squeeze(Se)
+
         Bc, Bz, By, Bx = np.split(B,np.cumsum([nC,nZ,nLy*nY]))
         SEc, SEz, SEy, SEx = np.split(Se,np.cumsum([nC,nZ,nLy*nY]))
 
-        Bc, Bx = np.squeeze(Bc), np.squeeze(Bx.reshape((nLx,nX)).T)
+        Bx = np.squeeze(Bx.reshape((nLx,nX)).T)
 
-        self.Est = est()
         self.Est.B, self.Est.Se, self.Est.V, self.Est.E, self.Est.S = B, Se, V, E, S
         self.Est.Bc, self.Est.Bz, self.Est.By, self.Est.Bx = Bc, Bz, By, Bx
         self.Est.SEc, self.Est.SEz, self.Est.SEy, self.Est.SEx = SEc, SEz, SEy, SEx
