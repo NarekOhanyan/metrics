@@ -5,6 +5,8 @@ import pandas as pd
 import scipy.stats as spstats
 import matplotlib.pyplot as mpl
 
+use_numba = False
+
 # %%
 class block:
     pass
@@ -20,6 +22,11 @@ class est:
 # %%
 class spec:
     pass
+
+# %%
+@nb.njit
+def C(arr):
+    return np.ascontiguousarray(arr)
 
 # %%
 def check_data(Ydata, Xdata, add_constant):
@@ -44,33 +51,6 @@ def check_data(Ydata, Xdata, add_constant):
     YXdata = YXdata[:,~np.isnan(YXdata).any(axis=0)]
     return YXdata[:nY], YXdata[nY:], cXdata
 
-# %% ols in column format
-def ols_v(y, X, dfc=True):
-    """
-    OLS with data in column format
-
-    Args:
-        y (nN, 1): y matrix.
-        X (nN, nX): X matrix.
-        dfc (bool, optional): Degrees of freedom correction. Defaults to True.
-
-    Returns:
-        (nX, 1): parameter estimates
-        (nX, 1): standard errors of parameter estimates
-        (nX, nX): variance matrix of parameter estimates
-        (nN, 1): residuals
-        (1, 1): mean squared error
-    """
-    nN,nX = X.shape
-    y = y.reshape((-1,1))
-    b = np.linalg.solve(X.T@X,X.T@y)
-    e = y-X@b
-    df = nN-nX if dfc else nN
-    S = (1/df)*(e.T@e)
-    V = S*np.linalg.inv(X.T@X)
-    se = np.sqrt(np.diagonal(V)).reshape((-1,1))
-    return b, se, V, e, S
-
 # %% ols in row format
 def ols_h(y, X, dfc=True):
     """
@@ -88,15 +68,17 @@ def ols_h(y, X, dfc=True):
         (nN,): residuals
         (1,): mean squared error
     """
-    nX,nN = X.shape
-    y = np.squeeze(y)
-    b = (y@X.T)@np.linalg.inv(X@X.T)
+    nX, nN = X.shape
+    y, X, Xt = C(y), C(X), C(X.T)
+    b = (y@Xt)@np.linalg.inv(X@Xt)
     e = y-b@X
     df = nN-nX if dfc else nN
     S = (1/df)*(e@e.T)
-    V = S*np.linalg.inv(X@X.T)
-    se = np.squeeze(np.sqrt(np.diagonal(V)).T)
+    V = S*np.linalg.inv(X@Xt)
+    se = np.sqrt(np.diag(V)).reshape(b.shape)
     return b, se, V, e, S
+
+ols_h_njit = nb.njit(ols_h)
 
 # %% OLS with many dependent variables y
 def ols_b_h(Y, X, dfc=True):
@@ -104,7 +86,10 @@ def ols_b_h(Y, X, dfc=True):
     nX, nN = X.shape
     Yy = Y.reshape((1,nY*nN))
     Xx = np.kron(np.eye(nY),X)
-    b, _, _, e, _ = ols_h(Yy, Xx,dfc)
+    if not use_numba:
+        b, _, _, e, _ = ols_h(Yy, Xx, dfc)
+    else:
+        b, _, _, e, _ = ols_h_njit(Yy, Xx, dfc)
     B = b.reshape((nY,nX))
     E = e.reshape((nY,nN))
     df = nN-nX if dfc else nN
@@ -116,6 +101,8 @@ def ols_b_h(Y, X, dfc=True):
     # Se = np.array([np.sqrt(np.diag(V[iY])) for iY in range(nY)])
     Se = np.sqrt(np.outer(np.diag(S),np.diag(invX)))
     return B, Se, V, E, S
+
+ols_b_h_njit = nb.njit(ols_b_h) # doesn't work due to https://github.com/numba/numba/issues/4580
 
 # %% OLS with one dependent variable y
 def OLS_h(Ydata, Xdata, add_constant=True, dfc=True):
