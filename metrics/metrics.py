@@ -109,9 +109,12 @@ def ols_b_h(Y, X, dfc=True):
     E = e.reshape((nY,nN))
     df = nN-nX if dfc else nN
     S = (1/df)*(E@E.T)
-    invXx = np.array([np.linalg.inv(X@X.T) for iY in range(nY)])
-    V = np.diagonal(S).reshape((-1,1,1))*invXx
-    Se = np.array([np.sqrt(np.diagonal(V[iY])) for iY in range(nY)])
+    invX = np.linalg.inv(X@X.T)
+    # invXx = np.repeat(invX[np.newaxis, :, :], nY, axis=0)
+    # invXx = np.repeat(invX, nY).reshape((nX*nX,nY)).T.reshape((nY,nX,nX))
+    V = np.diag(S).reshape((-1,1,1))*np.tile(invX, (nY, 1, 1))
+    # Se = np.array([np.sqrt(np.diag(V[iY])) for iY in range(nY)])
+    Se = np.sqrt(np.outer(np.diag(S),np.diag(invX)))
     return B, Se, V, E, S
 
 # %% OLS with one dependent variable y
