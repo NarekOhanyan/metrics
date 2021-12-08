@@ -410,89 +410,43 @@ class varms:
             self.iv.ins_names = ins_names
 
 # %% VAR-OLS
-def varols(data,nL):
+def varols(data, nL):
     """
     Function to estimate VAR(P) model with P = nL using OLS
     """
-    (n0,n1) = data.shape
+    (n0, n1) = data.shape
     nT = n1 - nL
     nY = n0
-    Z = np.ones((1,n1))
+    Z = np.ones((1, n1))
 
-    for p in range(1,nL+1):
-        Z = np.row_stack((Z,np.roll(data,p)))
+    for p in range(1, nL+1):
+        Z = np.row_stack((Z, np.roll(data, p)))
 
-    Z = Z[:,nL:]
-    Y = data[:,nL:]
+    Z = C(Z[:, nL:])
+    Y = C(data[:, nL:])
 
-    cB = (Y@Z.T)@(np.linalg.inv(Z@Z.T))
+    cB = np.linalg.solve(Z@C(Z.T), Z@C(Y.T)).T
 
-    c = cB[:,0]
-    B = cB[:,1:].T.reshape((nL,nY,nY)).transpose((0,2,1))
+    c = cB[:, 0]
+    B = C(cB[:, 1:].T).reshape((nL, nY, nY)).transpose((0, 2, 1))
     U = Y-cB@Z
     S = (1/(nT-nL*nY-1))*(U@U.T)
     return c, B, U, S
 
-# %% VAR-OLS njit
-@nb.njit
-def varols_njit(data,nL):
-    """
-    Function to estimate VAR(P) model with P = nL using OLS, enhanced with Numba
-    """
-    (n0,n1) = data.shape
-    nT = n1 - nL
-    nY = n0
-    Z = np.ones((1,n1))
-
-    for p in range(1,nL+1):
-        Z = np.row_stack((Z,np.roll(data,p)))
-
-    Z = np.ascontiguousarray(Z[:,nL:])
-    Z_T = np.ascontiguousarray(Z.T)
-    Y = np.ascontiguousarray(data[:,nL:])
-    Y_T = np.ascontiguousarray(Y.T)
-
-    cB = np.linalg.solve(Z@Z_T,Z@Y_T).T
-
-    c = cB[:,0]
-    B = np.ascontiguousarray(cB[:,1:].T).reshape((nL,nY,nY)).transpose((0,2,1))
-    U = Y-cB@Z
-    S = (1/(nT-nL*nY-1))*(U@U.T)
-    return c, B, U, S
-
+varols_njit = nb.njit(varols)
 
 # %% VAR simulate
-def varsim(c,B,U,Y0):
-    (nY,nT) = U.shape
-    (_,nL) = Y0.shape
-    Y = np.full(((nY,nL+nT)),np.nan)
+def varsim(c, B, U, Y0):
+    (nY, nT) = U.shape
+    (_, nL) = Y0.shape
+    Y = np.full(((nY, nL+nT)), np.nan)
     Y[:,:nL] = Y0
 
-    for t in range(nL,nL+nT):
+    for t in range(nL, nL+nT):
         # The methods (a) and (b) are equivalent
         ## (a)
-        # BB = B.swapaxes(1,2).reshape((nL*nY,nY)).T
-        # Y[:,t] = c + (BB@Y[:,t-nL:t][:,::-1].T.reshape((nL*nY,1))).reshape((-1,)) + U[:,t-nL]
-        ## (b)
-        Y_t = c + U[:,t-nL]
-        for l in range(nL):
-            Y_t += B[l]@Y[:,t-l-1]
-        Y[:,t] = Y_t
-    return Y
-
-# %% VAR simulate njit
-@nb.njit
-def varsim_njit(c,B,U,Y0):
-    (nY,nT) = U.shape
-    (_,nL) = Y0.shape
-    Y = np.full(((nY,nL+nT)),np.nan)
-    Y[:,:nL] = Y0
-
-    for t in range(nL,nL+nT):
-        # The methods (a) and (b) are equivalent
-        ## (a)
-        BB = np.ascontiguousarray(B.transpose((0,2,1))).reshape((nL*nY,nY)).T
-        Y[:,t] = c + (BB@np.ascontiguousarray(Y[:,t-nL:t][:,::-1].T).reshape((nL*nY,1))).reshape((-1,)) + U[:,t-nL]
+        BB = C(B.transpose((0, 2, 1))).reshape((nL*nY, nY)).T
+        Y[:,t] = c + (BB@C(Y[:, t-nL:t][:, ::-1].T).reshape((nL*nY, 1))).reshape((-1, )) + U[:, t-nL]
         ## (b)
         # Y_t = c + U[:,t-nL]
         # for l in range(nL):
@@ -500,26 +454,19 @@ def varsim_njit(c,B,U,Y0):
         # Y[:,t] = Y_t
     return Y
 
+varsim_njit = nb.njit(varsim)
+
 # %% get Psi from B
-def get_Psi_from_B(B,nH):
-    (nL,nY,_) = B.shape
-    Psi = np.zeros((nH+1,nY,nY))
+def get_Psi_from_B(B, nH):
+    (nL, nY, _) = B.shape
+    Psi = np.zeros((nH+1, nY, nY))
     Psi[0] = np.eye(nY)
-    for h in range(1,nH+1):
-        for i in range(min(h,nL)):
-            Psi[h] += Psi[h-i-1]@B[i]
+    for h in range(1, nH+1):
+        for i in range(min(h, nL)):
+            Psi[h] += C(Psi[h-i-1])@C(B[i])
     return Psi
 
-# %% get Psi from B njit
-@nb.njit
-def get_Psi_from_B_njit(B,nH):
-    (nL,nY,_) = B.shape
-    Psi = np.zeros((nH+1,nY,nY))
-    Psi[0] = np.eye(nY)
-    for h in range(1,nH+1):
-        for i in range(min(h,nL)):
-            Psi[h] += np.ascontiguousarray(Psi[h-i-1])@np.ascontiguousarray(B[i])
-    return Psi
+get_Psi_from_B_njit = nb.njit(get_Psi_from_B)
 
 # %% Get A0inv
 def get_A0inv(method=None,U=None,S=None,idv=None,M=None):
@@ -730,94 +677,51 @@ def iv_block_njit(MU,nM):
     return b11,b21
 
 # %% get SIRF from IRF
-def get_sirf_from_irf(Psi,A0inv,impulse):
-    if impulse is None:
-        impulse = 'unit'
-    if isinstance(impulse,str) and impulse == 'unit':
-        impulse_scale = np.diag(1/np.diag(A0inv))
-    elif isinstance(impulse,str) and impulse == '1sd':
-        impulse_scale = np.eye(A0inv.shape[0])
-    else:
-        impulse_scale = impulse*np.diag(1/np.diag(A0inv))
-    def get_ir(Psi,A0inv,impulse_scale):
-        Impact = A0inv@impulse_scale
-        ir = Psi@Impact
-        irc = np.cumsum(Psi@Impact,0)
-        return ir,irc
-    ir,irc = get_ir(Psi,A0inv,impulse_scale)
-    return ir,irc
-
-# %% get SIRF from IRF njit
-@nb.njit # not used
-def get_sirf_from_irf_njit(Psi,A0inv,impulse):
-    if impulse is None:
-        impulse = 'unit'
+def get_sirf_from_irf(Psi, A0inv, impulse='unit'):
     if impulse == 'unit':
         impulse_scale = np.diag(1/np.diag(A0inv))
     elif impulse == '1sd':
         impulse_scale = np.eye(A0inv.shape[0])
     else:
         impulse_scale = impulse*np.diag(1/np.diag(A0inv))
-    def get_ir(Psi,A0inv,impulse_scale):
-        Impact = A0inv@impulse_scale
-        ir = Psi@Impact
-        irc = np.cumsum(Psi@Impact,0)
-        return ir,irc
-    ir,irc = get_ir(Psi,A0inv,impulse_scale)
-    return ir,irc
+    Impact = A0inv@impulse_scale
+    Irf = Psi@Impact
+    Irfc = np.cumsum(Irf, 0)
+    return Irf, Irfc
+
+# get_sirf_from_irf_njit = nb.njit(get_sirf_from_irf)
 
 # %% Bootstrap
-def bs(Y,c,B,U,S,UM,nL,nY,nH,nT,/,*,method=None,impulse=None,cl=None,ci=None,idv=None,M=None):
-    Y0_r = Y[:,:nL]
+def bs(Y, c, B, U, S, UM, nL, nY, nH, nT, /, *, method=None, impulse=None, cl=None, ci=None, idv=None, M=None):
+    Y0_r = Y[:, :nL]
     if ci == 'bs':
-        idx_r = np.random.choice(nT,size=nT)
-        rescale = np.ones((1,nT))
-        UM_r = UM[:,idx_r]*rescale
+        idx_r = np.random.choice(nT, size=nT)
+        rescale = np.ones((1, nT))
+        UM_r = UM[:, idx_r]*rescale
     if ci == 'wbs':
         bs_dist = 'Rademacher'
         if bs_dist == 'Rademacher':
-            rescale = np.random.choice((-1,1),size=(1,nT))
+            rescale = np.random.choice((-1, 1), size=(1, nT))
         if bs_dist == 'Normal':
-            rescale = np.random.normal(size=(1,nT))
-        UM_r = UM[:,:]*rescale
-    U_r = UM_r[:nY,:]
-    M_r = UM_r[nY:,:]
-#     Y_r = varsim(c,B,U_r,Y0_r)
-    Y_r = varsim_njit(c,B,U_r,Y0_r)
-#     c_r_,B_r_,U_r_,S_r_ = varols(Y_r,nL)
-    c_r_,B_r_,U_r_,S_r_ = varols_njit(Y_r,nL)
-#     Psi_ = get_Psi_from_B(B_r_,nH)
-    Psi_ = get_Psi_from_B_njit(B_r_,nH)
-    A0inv_ = get_A0inv(method=method,U=U_r_,S=S_r_,idv=idv,M=M_r)
-    ir_,irc_ = get_sirf_from_irf(Psi_,A0inv_,impulse)
-    return ir_,irc_
+            rescale = np.random.normal(size=(1, nT))
+        UM_r = UM[:, :]*rescale
+    U_r = UM_r[:nY, :]
+    M_r = UM_r[nY:, :]
+    if use_numba:
+        Y_r = varsim_njit(c, B, U_r, Y0_r)
+        c_r_, B_r_, U_r_, S_r_ = varols_njit(Y_r, nL)
+        Psi_ = get_Psi_from_B_njit(B_r_, nH)
+        A0inv_ = get_A0inv(method=method, U=U_r_, S=S_r_, idv=idv, M=M_r)
+        ir_, irc_ = get_sirf_from_irf(Psi_, A0inv_, impulse)
+    else:
+        Y_r = varsim(c, B, U_r, Y0_r)
+        c_r_, B_r_, U_r_, S_r_ = varols(Y_r, nL)
+        Psi_ = get_Psi_from_B(B_r_, nH)
+        A0inv_ = get_A0inv(method=method, U=U_r_, S=S_r_, idv=idv, M=M_r)
+        ir_, irc_ = get_sirf_from_irf(Psi_, A0inv_, impulse)
+    return ir_, irc_
 
-# %% Bootstrap njit
-@nb.njit # not used
-def bs_njit(Y,c,B,U,S,UM,nL,nY,nH,nT,/,*,method=None,impulse=None,cl=None,ci=None,idv=None,M=None):
-    Y0_r = Y[:,:nL]
-    if ci == 'bs':
-        idx_r = np.random.choice(nT,size=nT)
-        rescale = np.ones((1,nT))
-        UM_r = UM[:,idx_r]*rescale
-    if ci == 'wbs':
-        bs_dist = 'Rademacher'
-        if bs_dist == 'Rademacher':
-            rescale = np.random.choice([-1,1],size=(1,nT))
-        if bs_dist == 'Normal':
-            rescale = np.random.normal(size=(1,nT))
-        UM_r = UM[:,:]*rescale
-    U_r = UM_r[:nY,:]
-    M_r = UM_r[nY:,:]
-#     Y_r = varsim(c,B,U_r,Y0_r)
-    Y_r = varsim_njit(c,B,U_r,Y0_r)
-#     c_r_,B_r_,U_r_,S_r_ = varols(Y_r,nL)
-    c_r_,B_r_,U_r_,S_r_ = varols_njit(Y_r,nL)
-#     Psi_ = get_Psi_from_B(B_r_,nH)
-    Psi_ = get_Psi_from_B_njit(B_r_,nH)
-    A0inv_ = get_A0inv_njit(method=method,U=U_r_,S=S_r_,idv=idv,M=M_r)
-    ir_,irc_ = get_sirf_from_irf_njit(Psi_,A0inv_,impulse)
-    return ir_,irc_
+bs_njit = nb.njit(bs)
 
 # %% get IRFs
 def get_irfs(Y,c,B,U,S,/,*,nH,method=None,impulse=None,cl=None,ci=None,nR=1000,idv=None,M=None):
