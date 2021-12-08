@@ -31,6 +31,13 @@ class model:
         self.Spec = spec()
 
 # %%
+class irfs:
+
+    def __init__(self, Irf, Irfc, nH):
+        self.Irf, self.Irfc = Irf, Irfc
+        self.nH = nH
+
+# %%
 @nb.njit
 def C(arr):
     return np.ascontiguousarray(arr)
@@ -110,6 +117,34 @@ def ols_b_h(Y, X, dfc=True):
     return B, Se, V, E, S
 
 ols_b_h_njit = nb.njit(ols_b_h) # doesn't work due to https://github.com/numba/numba/issues/4580
+
+# %%
+def split_C_B(B, nC, nL, nY):
+    Bc, Bx = np.split(B, np.array([nC]), axis=1)
+    Bx = Bx.T.reshape((nL, nY, nY)).transpose((0, 2, 1))
+    return Bc, Bx
+
+# %% VAR-OLS
+def fit_var_h(Y, nC, nL, dfc=True):
+    """
+    Function to estimate VAR(P) model with P = nL using OLS
+    """
+    nY, n1 = Y.shape
+    X = np.ones((nC, n1))
+    for p in range(1, nL+1):
+        X = np.row_stack((X, np.roll(Y, p)))
+    Y, X = Y[:, nL:], X[:, nL:]
+    if not use_numba:
+        B, Se, V, E, S = ols_b_h(Y, X, dfc)
+    else:
+        B, Se, V, E, S = ols_b_h_njit(Y, X, dfc)
+
+    Bc, Bx = split_C_B(B, nC, nL, nY)
+    SEc, SEx = split_C_B(Se, nC, nL, nY)
+
+    return Bc, Bx, SEc, SEx, B, Se, V, E, S
+
+fit_var_h_njit = nb.njit(fit_var_h)
 
 # %% OLS with one dependent variable y
 def OLS_h(Ydata, Xdata, add_constant=True, dfc=True):
@@ -786,8 +821,77 @@ def get_irfs(Y,c,B,U,S,/,*,nH,method=None,impulse=None,cl=None,ci=None,nR=1000,i
 
     return ir,irc,Psi,A0inv
 
-# ### VAR
+# %%
+def get_irfs_VARm(Bx, A0inv, nH):
+    Psi = get_Psi_from_B(Bx, nH)
+    Irf, Irfc = get_sirf_from_irf(Psi, A0inv)
+    Irf = Irf.transpose((1, 2, 0))
+    Irfc = Irfc.transpose((1, 2, 0))
+    return Irf, Irfc
 
+# %%
+class irfs_VARm(irfs):
+    def __init__(self, Irf, Irfc, nH):
+        super().__init__(Irf, Irfc, nH)
+
+# %% VAR
+
+class VARm(model):
+
+    def __init__(self, Ydata, /, *, var_names=None, nL=1, add_constant=True, dfc=True):
+
+        super().__init__()
+
+        if not isinstance(Ydata, pd.core.frame.DataFrame):
+            raise TypeError('data must be in pandas DataFrame format')
+
+        if var_names is None:
+            var_names = Ydata.columns
+
+        # Ydata, Xdata, Zdata = self.do_data(Ydata, Xdata, Zdata)
+        self.Data.Ydata = Ydata
+        self.add_constant = add_constant
+        self.Spec.nL = nL
+        self.Spec.dfc = dfc
+        self.Spec.nC = 1 if add_constant else 0
+
+        self.fit()
+        self.irf()
+
+    def fit(self):
+
+        nC, nL, dfc = self.Spec.nC, self.Spec.nL, self.Spec.dfc
+        Ydata = self.Data.Ydata
+
+        Y = Ydata.values.T
+
+        nY, _ = Y.shape
+        Bc, Bx, SEc, SEx, B, Se, V, E, S = fit_var_h(Y, nC, nL, dfc)
+
+        self.Spec.nY = nY
+        self.Est.Bc, self.Est.Bx = Bc, Bx
+        self.Est.SEc, self.Est.SEx = SEc, SEx
+        self.Est.B, self.Est.Se, self.Est.V, self.Est.E, self.Est.S = B, Se, V, E, S
+
+        return self
+
+    def irf(self, nH=12):
+
+        B, V, S = self.Est.B, self.Est.V, self.Est.S
+        nL, nC, nY = self.Spec.nL, self.Spec.nC, self.Spec.nY
+
+        # IRF at means
+        _, Bx = split_C_B(B, nC, nL, nY)
+        A0inv = np.linalg.cholesky(S)
+        Irf, Irfc = get_irfs_VARm(Bx, A0inv, nH)
+
+        Irfs = irfs_VARm(Irf, Irfc, nH)
+
+        self.Irfs = Irfs
+
+        return self
+
+# %%
 class varm:
 
     # ==============================================================================================
