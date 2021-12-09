@@ -28,9 +28,18 @@ class model:
 # %%
 class irfs:
 
-    def __init__(self, Irf_m, Irfc_m, irf_spec=None):
+    def __init__(self, Irf_m, Irfc_m, Irf_Sim=None, Irfc_Sim=None, irf_spec=None):
         self.Irf_m, self.Irfc_m = Irf_m, Irfc_m
+        self.__Irf_Sim, self.__Irfc_Sim = Irf_Sim, Irfc_Sim
         self.Spec = irf_spec
+
+    def Irf_q(self, q):
+        Irf_Sim = self.__Irf_Sim
+        return np.quantile(Irf_Sim, q, axis=0)
+
+    def Irfc_q(self, q):
+        Irfc_Sim = self.__Irfc_Sim
+        return np.quantile(Irfc_Sim, q, axis=0)
 
 # %%
 @nb.njit
@@ -106,7 +115,7 @@ def ols_b_h(Y, X, dfc=True):
     S = (1/df)*(E@E.T)
     invX = C(np.linalg.inv(X@X.T))
     if use_numba:
-    # invXx = np.repeat(invX[np.newaxis, :, :], nY, axis=0)
+        # invXx = np.repeat(invX[np.newaxis, :, :], nY, axis=0)
         invXx = np.repeat(invX, nY).reshape((nX*nX,nY)).T.reshape((nY,nX,nX))
     else:
         invXx = np.tile(invX, (nY, 1, 1))
@@ -487,6 +496,50 @@ def varsim(c, B, U, Y0):
 
 varsim_njit = nb.njit(varsim)
 
+# %% simulate VAR
+def sim_var(Y0, Bc, Bx, U):
+    Y0, Bc, Bx, U = C(Y0), C(Bc), C(Bx), C(U)
+    nY, nL = Y0.shape
+    nY, nT = U.shape
+    Y = np.full(((nY, nL+nT)), np.nan)
+    Y[:,:nL] = Y0
+    BX = C(Bx.transpose((0, 2, 1))).reshape((nL*nY, nY)).T
+    for t in range(nL, nL+nT):
+        # The methods (a) and (b) are equivalent
+        ## (a)
+        Y[:,t] = Bc.reshape(-1) + BX@C(Y[:, t-nL:t][:, ::-1].T).reshape(-1) + U[:, t-nL]
+        ## (b)
+        # Y_t = c + U[:,t-nL]
+        # for l in range(nL):
+        #     Y_t += B[l]@Y[:, t-l-1]
+        # Y[:,t] = Y_t
+    return Y
+
+sim_var_njit = nb.njit(sim_var)
+
+# %% simulate VAR
+def sim_var_b(Y0, Bc, Bx, U):
+    (nS, nY, nT) = U.shape
+    (_, nL) = Y0.shape
+    Yy = np.full(((nS, nY, nL+nT)), np.nan)
+    Yy[:, :, :nL] = Y0
+
+    BX = C(Bx.transpose((0, 2, 1))).reshape((nL*nY, nY)).T
+
+    for t in range(nL, nL+nT):
+        # The methods (a) and (b) are equivalent
+        ## (a)
+        Yy[:, :, t] = np.repeat(Bc[np.newaxis,:], nS, axis=0) + (BX@C(Yy[:, :, t-nL:t][:, :, ::-1].T).reshape((nS, nL*nY)).T).T + U[:, :, t-nL]
+        ## (b)
+        # for s in range(nS):
+        #     Y_t = c + U[:,t-nL]
+        #     for l in range(nL):
+        #         Y_t += B[l]@Yy[:, :, t-l-1]
+        #     Yy[s, :, t] = Y_t
+    return Yy
+
+sim_var_b_njit = nb.njit(sim_var_b)
+
 # %% get Psi from B
 def get_Psi_from_B(B, nH):
     (nL, nY, _) = B.shape
@@ -723,7 +776,40 @@ def get_sirf_from_irf(Psi, A0inv, impulse='unit'):
 # get_sirf_from_irf_njit = nb.njit(get_sirf_from_irf)
 
 # %% Bootstrap
-def bs(Y, c, B, U, S, UM, nL, nY, nH, nT, /, *, method=None, impulse=None, cl=None, ci=None, idv=None, M=None):
+def bs(Y, U, B, /, *, model_spec, irf_spec):
+    nC, nL, nY, nT, dfc = model_spec['nC'], model_spec['nL'], model_spec['nY'], model_spec['nT'], model_spec['dfc']
+    nH, method = irf_spec['nH'], irf_spec['method']
+    Y0 = Y[:, :nL]
+    Bc, Bx = split_C_B(B, nC, nL, nY)
+    if method == 'bs':
+        idx_r = np.random.choice(nT, size=nT)
+        U_ = U[:, idx_r]
+    if method == 'wbs':
+        bs_dist = 'Rademacher'
+        if bs_dist == 'Rademacher':
+            rescale = np.random.choice((-1, 1), size=(1, nT))
+        if bs_dist == 'Normal':
+            rescale = np.random.normal(size=(1, nT))
+        U_ = U*rescale
+    U_ = U_[:nY, :]
+    if use_numba:
+        Y_ = sim_var_njit(Y0, Bc, Bx, U_)
+        B_, _, _, _, S_ = fit_var_h_njit(Y_, nC, nL, dfc)
+        _, Bx_ = split_C_B(B_, nC, nL, nY)
+        A0inv_ = np.linalg.cholesky(S_)
+        ir_, irc_ = get_irfs_VARm(Bx_, A0inv_, nH)
+    else:
+        Y_ = sim_var(Y0, Bc, Bx, U_)
+        B_, _, _, _, S_ = fit_var_h(Y_, nC, nL, dfc)
+        _, Bx_ = split_C_B(B_, nC, nL, nY)
+        A0inv_ = np.linalg.cholesky(S_)
+        ir_, irc_ = get_irfs_VARm(Bx_, A0inv_, nH)
+    return ir_, irc_
+
+bs_njit = nb.njit(bs)
+
+# %% Bootstrap
+def get_bs(Y, c, B, U, S, UM, nL, nY, nH, nT, /, *, method=None, impulse=None, cl=None, ci=None, idv=None, M=None):
     Y0_r = Y[:, :nL]
     if ci == 'bs':
         idx_r = np.random.choice(nT, size=nT)
@@ -752,7 +838,7 @@ def bs(Y, c, B, U, S, UM, nL, nY, nH, nT, /, *, method=None, impulse=None, cl=No
         ir_, irc_ = get_sirf_from_irf(Psi_, A0inv_, impulse)
     return ir_, irc_
 
-bs_njit = nb.njit(bs)
+get_bs_njit = nb.njit(get_bs)
 
 # %% get IRFs
 def get_irfs(Y,c,B,U,S,/,*,nH,method=None,impulse=None,cl=None,ci=None,nR=1000,idv=None,M=None):
@@ -778,7 +864,7 @@ def get_irfs(Y,c,B,U,S,/,*,nH,method=None,impulse=None,cl=None,ci=None,nR=1000,i
         for r in range(nR):
             if (r+1) % 100 == 0:
                 print('\r Bootstrap {}/{}'.format(r+1,nR),end='\r',flush=True)
-            ir_,irc_ = bs(Y,c,B,U,S,UM,nL,nY,nH,nT,method=method,impulse=impulse,cl=cl,ci=ci,idv=idv,M=M)
+            ir_,irc_ = get_bs(Y,c,B,U,S,UM,nL,nY,nH,nT,method=method,impulse=impulse,cl=cl,ci=ci,idv=idv,M=M)
 #             ir_,irc_ = bs_njit(Y,c,B,U,S,UM,nL,nY,nH,nT,method=method,impulse=impulse,cl=cl,ci=ci,idv=idv,M=M)
             IR[r],IRC[r] = ir_,irc_
         print(end='\n')
@@ -824,6 +910,42 @@ def get_irfs_VARm(Bx, A0inv, nH):
     Irf = Irf.transpose((1, 2, 0))
     Irfc = Irfc.transpose((1, 2, 0))
     return Irf, Irfc
+
+# %%
+def get_irfs_sim_VARm(Y, B, U, /, *, model_spec, irf_spec):
+
+    nY, _ = Y.shape
+    nH, method, nR = irf_spec['nH'], irf_spec['method'], irf_spec['nR']
+
+    if method in ['bs','wbs']:
+        Irf_Sim = np.full((nR, nY, nY, nH+1), np.nan)
+        Irfc_Sim = np.full((nR, nY, nY, nH+1), np.nan)
+        for r in range(nR):
+            Irf_Sim[r], Irfc_Sim[r] = bs(Y, U, B, model_spec=model_spec, irf_spec=irf_spec)
+
+    return Irf_Sim, Irfc_Sim
+
+    # # Confidence intervals
+    # if ci['method'] in ['pbs','sim']:
+
+    #     nR = ci['nR']
+
+    #     Irf_Sim = np.full((nR, nY, nY, nH+1), np.nan)
+    #     Irfc_Sim = np.full((nR, nY, nY, nH+1), np.nan)
+
+    #     Bv = B.reshape((-1))
+    #     Vv = sp.linalg.block_diag(*V)
+    #     B_Sim = np.random.multivariate_normal(Bv, Vv, size=nR)
+    #     for r in range(nR):
+    #         B_r = B_Sim[r].reshape((nY,-1))
+    #         _, Bx_r = split_C_B(B_r, nC, nL, nY)
+    #         A0inv = np.linalg.cholesky(S)
+    #         Irf_r, Irfc_r = get_irfs_VARm(Bx_r, A0inv, nH)
+    #         Irf_Sim[r], Irfc_Sim[r] = Irf_r, Irfc_r
+
+    #     return Irf, Irfc, Irf_Sim, Irfc_Sim
+    # else:
+    #     return Irf, Irfc, None, None
 
 # %%
 class irfs_VARm(irfs):
@@ -876,20 +998,24 @@ class VARm(model):
 
     def irf(self, **kwargs):
 
-        irf_spec = dict(nH=12)
+        irf_spec = dict(nH=12, method='bs', nR=1000)
         irf_spec.update(kwargs)
+        Bx, B, U, S = self.Est.Bx, self.Est.B, self.Est.U, self.Est.S
+        model_spec = self.Spec
+        Ydata = self.Data.Ydata
 
         nH = irf_spec['nH']
+        Y = Ydata.values.T
 
-        B, S = self.Est.B, self.Est.S
-        nC, nL, nY = self.Spec['nC'], self.Spec['nL'], self.Spec['nY']
+        A0inv = np.linalg.cholesky(S)
 
         # IRF at means
-        _, Bx = split_C_B(B, nC, nL, nY)
-        A0inv = np.linalg.cholesky(S)
-        Irf, Irfc = get_irfs_VARm(Bx, A0inv, nH)
+        Irf_m, Irfc_m = get_irfs_VARm(Bx, A0inv, nH)
 
-        Irfs = irfs_VARm(Irf, Irfc, irf_spec)
+        # IRF simulations
+        Irf_Sim, Irfc_Sim = get_irfs_sim_VARm(Y, B, U, model_spec=model_spec, irf_spec=irf_spec)
+
+        Irfs = irfs_VARm(Irf_m, Irfc_m, Irf_Sim, Irfc_Sim, irf_spec)
 
         self.Irfs = Irfs
 
