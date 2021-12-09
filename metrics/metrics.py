@@ -77,8 +77,8 @@ def ols_h(y, X, dfc=True):
         (nN,): residuals
         (1,): mean squared error
     """
-    nX, nN = X.shape
     y, X, Xt = C(y), C(X), C(X.T)
+    nX, nN = X.shape
     b = (y@Xt)@np.linalg.inv(X@Xt)
     e = y-b@X
     df = nN-nX if dfc else nN
@@ -91,24 +91,28 @@ ols_h_njit = nb.njit(ols_h)
 
 # %% OLS with many dependent variables y
 def ols_b_h(Y, X, dfc=True):
+    Y, X = C(Y), C(X)
     nY, nN = Y.shape
     nX, nN = X.shape
-    Yy = Y.reshape((1,nY*nN))
-    Xx = np.kron(np.eye(nY),X)
+    Yy = Y.reshape((1, nY*nN))
+    Xx = np.kron(np.eye(nY), X)
     if not use_numba:
         b, _, _, e, _ = ols_h(Yy, Xx, dfc)
     else:
         b, _, _, e, _ = ols_h_njit(Yy, Xx, dfc)
-    B = b.reshape((nY,nX))
-    E = e.reshape((nY,nN))
+    B = b.reshape((nY, nX))
+    E = e.reshape((nY, nN))
     df = nN-nX if dfc else nN
     S = (1/df)*(E@E.T)
-    invX = np.linalg.inv(X@X.T)
+    invX = C(np.linalg.inv(X@X.T))
+    if use_numba:
     # invXx = np.repeat(invX[np.newaxis, :, :], nY, axis=0)
-    # invXx = np.repeat(invX, nY).reshape((nX*nX,nY)).T.reshape((nY,nX,nX))
-    V = np.diag(S).reshape((-1,1,1))*np.tile(invX, (nY, 1, 1))
+        invXx = np.repeat(invX, nY).reshape((nX*nX,nY)).T.reshape((nY,nX,nX))
+    else:
+        invXx = np.tile(invX, (nY, 1, 1))
+    V = np.diag(S).reshape((-1, 1, 1))*invXx
     # Se = np.array([np.sqrt(np.diag(V[iY])) for iY in range(nY)])
-    Se = np.sqrt(np.outer(np.diag(S),np.diag(invX)))
+    Se = np.sqrt(np.outer(np.diag(S), np.diag(invX)))
     return B, Se, V, E, S
 
 ols_b_h_njit = nb.njit(ols_b_h) # doesn't work due to https://github.com/numba/numba/issues/4580
