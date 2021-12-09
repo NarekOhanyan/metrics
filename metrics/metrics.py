@@ -134,14 +134,11 @@ def fit_var_h(Y, nC, nL, dfc=True):
         X = np.row_stack((X, np.roll(Y, p)))
     Y, X = Y[:, nL:], X[:, nL:]
     if not use_numba:
-        B, Se, V, E, S = ols_b_h(Y, X, dfc)
+        B, Se, V, U, S = ols_b_h(Y, X, dfc)
     else:
-        B, Se, V, E, S = ols_b_h_njit(Y, X, dfc)
+        B, Se, V, U, S = ols_b_h_njit(Y, X, dfc)
 
-    Bc, Bx = split_C_B(B, nC, nL, nY)
-    SEc, SEx = split_C_B(Se, nC, nL, nY)
-
-    return Bc, Bx, SEc, SEx, B, Se, V, E, S
+    return B, Se, V, U, S
 
 fit_var_h_njit = nb.njit(fit_var_h)
 
@@ -865,12 +862,15 @@ class VARm(model):
         nY, n1 = Y.shape
         nT = n1-nL
 
-        Bc, Bx, SEc, SEx, B, Se, V, E, S = fit_var_h(Y, nC, nL, dfc)
+        B, Se, V, U, S = fit_var_h(Y, nC, nL, dfc)
+
+        Bc, Bx = split_C_B(B, nC, nL, nY)
+        SEc, SEx = split_C_B(Se, nC, nL, nY)
 
         self.Spec['nY'], self.Spec['nT'] = nY, nT
         self.Est.Bc, self.Est.Bx = Bc, Bx
         self.Est.SEc, self.Est.SEx = SEc, SEx
-        self.Est.B, self.Est.Se, self.Est.V, self.Est.E, self.Est.S = B, Se, V, E, S
+        self.Est.B, self.Est.Se, self.Est.V, self.Est.U, self.Est.S = B, Se, V, U, S
 
         return self
 
