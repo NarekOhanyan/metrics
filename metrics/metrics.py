@@ -20,22 +20,17 @@ class est:
     pass
 
 # %%
-class spec:
-    pass
-
-# %%
 class model:
     def __init__(self):
         self.Data = data()
         self.Est = est()
-        self.Spec = spec()
 
 # %%
 class irfs:
 
-    def __init__(self, Irf, Irfc, nH):
-        self.Irf, self.Irfc = Irf, Irfc
-        self.nH = nH
+    def __init__(self, Irf_m, Irfc_m, irf_spec=None):
+        self.Irf_m, self.Irfc_m = Irf_m, Irfc_m
+        self.Spec = irf_spec
 
 # %%
 @nb.njit
@@ -831,8 +826,8 @@ def get_irfs_VARm(Bx, A0inv, nH):
 
 # %%
 class irfs_VARm(irfs):
-    def __init__(self, Irf, Irfc, nH):
-        super().__init__(Irf, Irfc, nH)
+    def __init__(self, *args, **kwargs):
+        super().__init__( *args, **kwargs)
 
 # %% VAR
 
@@ -850,42 +845,47 @@ class VARm(model):
 
         # Ydata, Xdata, Zdata = self.do_data(Ydata, Xdata, Zdata)
         self.Data.Ydata = Ydata
-        self.add_constant = add_constant
-        self.Spec.nL = nL
-        self.Spec.dfc = dfc
-        self.Spec.nC = 1 if add_constant else 0
+        nC = 1 if add_constant else 0
+        self.Spec = dict(nC=nC, nL=nL, dfc=dfc)
 
         self.fit()
         self.irf()
 
     def fit(self):
 
-        nC, nL, dfc = self.Spec.nC, self.Spec.nL, self.Spec.dfc
+        nC, nL, dfc = self.Spec['nC'], self.Spec['nL'], self.Spec['dfc']
         Ydata = self.Data.Ydata
 
         Y = Ydata.values.T
 
-        nY, _ = Y.shape
+        nY, n1 = Y.shape
+        nT = n1-nL
+
         Bc, Bx, SEc, SEx, B, Se, V, E, S = fit_var_h(Y, nC, nL, dfc)
 
-        self.Spec.nY = nY
+        self.Spec['nY'], self.Spec['nT'] = nY, nT
         self.Est.Bc, self.Est.Bx = Bc, Bx
         self.Est.SEc, self.Est.SEx = SEc, SEx
         self.Est.B, self.Est.Se, self.Est.V, self.Est.E, self.Est.S = B, Se, V, E, S
 
         return self
 
-    def irf(self, nH=12):
+    def irf(self, **kwargs):
 
-        B, V, S = self.Est.B, self.Est.V, self.Est.S
-        nL, nC, nY = self.Spec.nL, self.Spec.nC, self.Spec.nY
+        irf_spec = dict(nH=12)
+        irf_spec.update(kwargs)
+
+        nH = irf_spec['nH']
+
+        B, S = self.Est.B, self.Est.S
+        nC, nL, nY = self.Spec['nC'], self.Spec['nL'], self.Spec['nY']
 
         # IRF at means
         _, Bx = split_C_B(B, nC, nL, nY)
         A0inv = np.linalg.cholesky(S)
         Irf, Irfc = get_irfs_VARm(Bx, A0inv, nH)
 
-        Irfs = irfs_VARm(Irf, Irfc, nH)
+        Irfs = irfs_VARm(Irf, Irfc, irf_spec)
 
         self.Irfs = Irfs
 
