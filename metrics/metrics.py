@@ -20,8 +20,13 @@ class est:
     pass
 
 # %%
+class spec:
+    pass
+
+# %%
 class model:
     def __init__(self):
+        self.Spec = spec()
         self.Data = data()
         self.Est = est()
 
