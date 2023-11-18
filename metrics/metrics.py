@@ -213,9 +213,9 @@ class ardlm(model):
         W = np.ones((nC,n1))
         W = np.row_stack((W,Z))
         for l in range(1,nLy+1):
-            W = np.row_stack((W,np.roll(y,l)))
+            W = np.row_stack((W,np.roll(y,l, axis=1)))
         for l in range(1,nLx+1):
-            W = np.row_stack((W,np.roll(X,l)))
+            W = np.row_stack((W,np.roll(X,l, axis=1)))
 
         (nY,_), (nX,_), (nZ,_), (nW,_) = Y.shape, X.shape, Z.shape, W.shape
 
@@ -233,7 +233,7 @@ class ardlm(model):
         self.Est.B, self.Est.Se, self.Est.V, self.Est.E, self.Est.S = B, Se, V, E, S
         self.Est.Bc, self.Est.Bz, self.Est.By, self.Est.Bx = Bc, Bz, By, Bx
         self.Est.SEc, self.Est.SEz, self.Est.SEy, self.Est.SEx = SEc, SEz, SEy, SEx
-        self.Spec.nY, self.Spec.nX, self.Spec.nZ, self.Spec.nW = nY, nX, nZ, nW
+        self.Spec.nY, self.Spec.nX, self.Spec.nZ, self.Spec.nW, self.Spec.nT = nY, nX, nZ, nW, nT
 
         return self
 
@@ -255,8 +255,8 @@ class ardlm(model):
 
         Irf = np.full((nX,nH+1),np.nan)
 
-        By = np.pad(By.reshape((nY,-1)),((0,0),(0,nH-nLy+1)))
-        Bx = np.pad(Bx.reshape((nX,-1)),((0,0),(0,nH-nLx+1)))
+        By = np.pad(By.reshape((nY,nLy)),((0,0),(0,nH-nLy+1)))
+        Bx = np.pad(Bx.reshape((nX,nLx)),((0,0),(0,nH-nLx+1)))
 
         Bx = np.column_stack((np.zeros((nX,1)),Bx))
         for h in range(nH+1):
@@ -783,13 +783,13 @@ def get_sirf_from_irf(Psi, A0inv, impulse='unit'):
 # %% Bootstrap
 def bs(Y, U, B, /, *, model_spec, irf_spec):
     nC, nL, nY, nT, dfc = model_spec['nC'], model_spec['nL'], model_spec['nY'], model_spec['nT'], model_spec['dfc']
-    nH, method = irf_spec['nH'], irf_spec['method']
+    nH, ci = irf_spec['nH'], irf_spec['ci']
     Y0 = Y[:, :nL]
     Bc, Bx = split_C_B(B, nC, nL, nY)
-    if method == 'bs':
+    if ci == 'bs':
         idx_r = np.random.choice(nT, size=nT)
         U_ = U[:, idx_r]
-    if method == 'wbs':
+    if ci == 'wbs':
         bs_dist = 'Rademacher'
         if bs_dist == 'Rademacher':
             rescale = np.random.choice((-1, 1), size=(1, nT))
@@ -912,17 +912,17 @@ def get_irfs(Y,c,B,U,S,/,*,nH,method=None,impulse=None,cl=None,ci=None,nR=1000,i
 def get_irfs_VARm(Bx, A0inv, nH):
     Psi = get_Psi_from_B(Bx, nH)
     Irf, Irfc = get_sirf_from_irf(Psi, A0inv)
-    Irf = Irf.transpose((1, 2, 0))
-    Irfc = Irfc.transpose((1, 2, 0))
+    Irf = Irf.transpose((2, 1, 0))
+    Irfc = Irfc.transpose((2, 1, 0))
     return Irf, Irfc
 
 # %%
 def get_irfs_sim_VARm(Y, B, U, /, *, model_spec, irf_spec):
 
     nY, _ = Y.shape
-    nH, method, nR = irf_spec['nH'], irf_spec['method'], irf_spec['nR']
+    nH, ci, nR = irf_spec['nH'], irf_spec['ci'], irf_spec['nR']
 
-    if method in ['bs','wbs']:
+    if ci in ['bs','wbs']:
         Irf_Sim = np.full((nR, nY, nY, nH+1), np.nan)
         Irfc_Sim = np.full((nR, nY, nY, nH+1), np.nan)
         for r in range(nR):
@@ -931,7 +931,7 @@ def get_irfs_sim_VARm(Y, B, U, /, *, model_spec, irf_spec):
     return Irf_Sim, Irfc_Sim
 
     # # Confidence intervals
-    # if ci['method'] in ['pbs','sim']:
+    # if ci['ci'] in ['pbs','sim']:
 
     #     nR = ci['nR']
 
@@ -961,7 +961,7 @@ class irfs_VARm(irfs):
 
 class VARm(model):
 
-    def __init__(self, Ydata, /, *, var_names=None, nL=1, add_constant=True, dfc=True):
+    def __init__(self, Ydata, /, *, var_names=None, add_constant=True, nL=1, dfc=True):
 
         super().__init__()
 
@@ -970,18 +970,20 @@ class VARm(model):
 
         if var_names is None:
             var_names = Ydata.columns
+        Ydata = Ydata[var_names]
 
         # Ydata, Xdata, Zdata = self.do_data(Ydata, Xdata, Zdata)
         self.Data.Ydata = Ydata
         nC = 1 if add_constant else 0
         self.Spec = dict(nC=nC, nL=nL, dfc=dfc)
 
+        self.Irfs = None
         self.fit()
         self.irf()
 
     def fit(self):
 
-        nC, nL, dfc = self.Spec['nC'], self.Spec['nL'], self.Spec['dfc']
+        nC, nL, nY, dfc = self.Spec['nC'], self.Spec['nL'], self.Spec['nY'], self.Spec['dfc']
         Ydata = self.Data.Ydata
 
         Y = Ydata.values.T
@@ -989,27 +991,26 @@ class VARm(model):
         nY, n1 = Y.shape
         nT = n1-nL
 
-        B, Se, V, U, S = fit_var_h(Y, nC, nL, dfc)
+        B, SE, V, U, S = fit_var_h(Y, nC, nL, dfc)
 
         Bc, Bx = split_C_B(B, nC, nL, nY)
-        SEc, SEx = split_C_B(Se, nC, nL, nY)
+        SEc, SEx = split_C_B(SE, nC, nL, nY)
 
         self.Spec['nY'], self.Spec['nT'] = nY, nT
-        self.Est.Bc, self.Est.Bx = Bc, Bx
-        self.Est.SEc, self.Est.SEx = SEc, SEx
-        self.Est.B, self.Est.Se, self.Est.V, self.Est.U, self.Est.S = B, Se, V, U, S
+        self.Est = {'Bc': Bc, 'Bx': Bx, 'SEc': SEc, 'SEx': SEx, 'B': B, 'SE': SE, 'V': V, 'U': U, 'S': S}
 
         return self
 
-    def irf(self, **kwargs):
+    def irf(self, **irf_spec):
 
-        irf_spec = dict(nH=12, method='bs', nR=1000)
-        irf_spec.update(kwargs)
-        Bx, B, U, S = self.Est.Bx, self.Est.B, self.Est.U, self.Est.S
+        irf_spec_default = self.Irfs.Spec if hasattr(self.Irfs, 'Spec') else {'nH': 12, 'ci': 'bs', 'nR': 100}
+        irf_spec = {**irf_spec_default, **irf_spec} if irf_spec else irf_spec_default
+
         model_spec = self.Spec
+        nH = irf_spec['nH']
+        Bx, B, U, S = self.Est['Bx'], self.Est['B'], self.Est['U'], self.Est['S']
         Ydata = self.Data.Ydata
 
-        nH = irf_spec['nH']
         Y = Ydata.values.T
 
         A0inv = np.linalg.cholesky(S)
