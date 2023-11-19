@@ -2,6 +2,7 @@
 import numpy as np
 import numba as nb
 import pandas as pd
+import datetime as dt
 import scipy.stats as spstats
 import matplotlib.pyplot as mpl
 
@@ -74,6 +75,28 @@ def check_data(Ydata, Xdata, add_constant):
     YXdata = YXdata[:,~np.isnan(YXdata).any(axis=0)]
     return YXdata[:nY], YXdata[nY:], cXdata
 
+# %%
+def get_NaN_free_idx(Ydata):
+
+    n0, _ = Ydata.shape
+    any_NaN = np.isnan(Ydata.values).any(axis=1)
+    if not any_NaN.any():                               # if no NaNs
+        NaN_free_idx = [0, n0-1]
+    elif not any_NaN[0] and not any_NaN[-1]:            # if NaNs in the middle
+        raise ValueError('sample should not contain NaNs')
+    else:
+        any_NaN_change = np.argwhere(any_NaN[1:]!=any_NaN[:-1])+1
+        if any_NaN_change.shape[0] > 2:                             # if more than two NaN blocks
+            raise ValueError('sample should not contain NaNs')
+        elif any_NaN[0] and not any_NaN[-1]:                        # if sample starts with NaNs
+            NaN_free_idx = [any_NaN_change[0,0], n0-1]
+        elif not any_NaN[0] and any_NaN[-1]:                        # if sample ends with NaNs
+            NaN_free_idx = [0, any_NaN_change[0,0]-1]
+        else:                                                       # if starts and ends with NaNs
+            NaN_free_idx = [any_NaN_change[0,0], any_NaN_change[1,0]-1]
+
+    return NaN_free_idx
+
 # %% ols in row format
 def ols_h(y, X, dfc=True):
     """
@@ -142,7 +165,7 @@ def fit_var_h(Y, nC, nL, dfc=True):
     """
     Function to estimate VAR(P) model with P = nL using OLS
     """
-    nY, n1 = Y.shape
+    _, n1 = Y.shape
     X = np.ones((nC, n1))
     for p in range(1, nL+1):
         X = np.row_stack((X, np.roll(Y, p)))
@@ -961,7 +984,7 @@ class irfs_VARm(irfs):
 
 class VARm(model):
 
-    def __init__(self, Ydata, /, *, var_names=None, add_constant=True, nL=1, dfc=True):
+    def __init__(self, Ydata, /, *, var_names=None, sample=None, add_constant=True, nL=1, dfc=True):
 
         super().__init__()
 
@@ -975,28 +998,22 @@ class VARm(model):
         # Ydata, Xdata, Zdata = self.do_data(Ydata, Xdata, Zdata)
         self.Data.Ydata = Ydata
         nC = 1 if add_constant else 0
-        self.Spec = dict(nC=nC, nL=nL, dfc=dfc)
 
         self.Irfs = None
-        self.fit()
-        self.irf()
+        self.set_sample(var_names, sample, nC, nL, dfc)
 
     def fit(self):
 
-        nC, nL, nY, dfc = self.Spec['nC'], self.Spec['nL'], self.Spec['nY'], self.Spec['dfc']
+        sample_idx, nC, nL, nY, dfc = self.Spec['sample_idx'], self.Spec['nC'], self.Spec['nL'], self.Spec['nY'], self.Spec['dfc']
         Ydata = self.Data.Ydata
 
-        Y = Ydata.values.T
-
-        nY, n1 = Y.shape
-        nT = n1-nL
+        Y = Ydata.iloc[sample_idx[0]-nL:sample_idx[1]+1].values.T
 
         B, SE, V, U, S = fit_var_h(Y, nC, nL, dfc)
 
         Bc, Bx = split_C_B(B, nC, nL, nY)
         SEc, SEx = split_C_B(SE, nC, nL, nY)
 
-        self.Spec['nY'], self.Spec['nT'] = nY, nT
         self.Est = {'Bc': Bc, 'Bx': Bx, 'SEc': SEc, 'SEx': SEx, 'B': B, 'SE': SE, 'V': V, 'U': U, 'S': S}
 
         return self
@@ -1007,11 +1024,12 @@ class VARm(model):
         irf_spec = {**irf_spec_default, **irf_spec} if irf_spec else irf_spec_default
 
         model_spec = self.Spec
+        sample_idx, nL = self.Spec['sample_idx'], self.Spec['nL']
         nH = irf_spec['nH']
         Bx, B, U, S = self.Est['Bx'], self.Est['B'], self.Est['U'], self.Est['S']
         Ydata = self.Data.Ydata
 
-        Y = Ydata.values.T
+        Y = Ydata.iloc[sample_idx[0]-nL:sample_idx[1]+1].values.T
 
         A0inv = np.linalg.cholesky(S)
 
@@ -1024,6 +1042,55 @@ class VARm(model):
         Irfs = irfs_VARm(Irf_m, Irfc_m, Irf_Sim, Irfc_Sim, irf_spec)
 
         self.Irfs = Irfs
+
+        return self
+
+    def set_sample(self, var_names, sample, nC, nL, dfc):
+
+        Ydata = self.Data.Ydata
+
+        _, nY = Ydata.shape
+
+        NaN_free_idx = get_NaN_free_idx(Ydata)
+
+        if sample is None:
+            sample_idx = [nL+NaN_free_idx[0], NaN_free_idx[1]]
+        elif Ydata.index.get_loc(sample[0]) >= nL+NaN_free_idx[0] and NaN_free_idx[1] <= Ydata.index.get_loc(sample[1]):
+            sample_idx = [Ydata.index.get_loc(sample[0]), Ydata.index.get_loc(sample[1])]
+        else:
+            raise KeyError('Provided sample is outside of the available data range')
+
+        nT = int(sample_idx[1] - sample_idx[0] + 1)
+        sample = [Ydata.index[sample_idx[0]].strftime('%Y-%m-%d'), Ydata.index[sample_idx[1]].strftime('%Y-%m-%d')]
+
+        self.Spec = {'var_names': var_names, 'sample': sample, 'sample_idx': sample_idx, 'nC': nC, 'nL': nL, 'nY': nY, 'nT': nT, 'dfc': dfc}
+        self.__Default_Spec = {**self.Spec}
+        self.fit()
+
+        return self
+
+    def change_sample(self, sample=None):
+
+        default_sample = self.__Default_Spec['sample']
+        sample = default_sample if sample is None else sample
+
+        Ydata = self.Data.Ydata
+
+        Ydata_sample = Ydata.loc[sample[0]:sample[1]]
+
+        if dt.datetime.strptime(default_sample[0], '%Y-%m-%d') <= Ydata_sample.index[0] and Ydata_sample.index[-1] <= dt.datetime.strptime(default_sample[1], '%Y-%m-%d'):
+            sample_idx = [Ydata.index.get_loc(Ydata_sample.iloc[0].name), Ydata.index.get_loc(Ydata_sample.iloc[-1].name)]
+        else:
+            raise KeyError('Provided sample is outside of the available data range')
+
+        nT = int(sample_idx[1] - sample_idx[0] + 1)
+        sample = [Ydata.index[sample_idx[0]].strftime('%Y-%m-%d'), Ydata.index[sample_idx[1]].strftime('%Y-%m-%d')]
+
+        self.Spec['nT'] = nT
+        self.Spec['sample'] = sample
+        self.Spec['sample_idx'] = sample_idx
+
+        self.fit()
 
         return self
 
