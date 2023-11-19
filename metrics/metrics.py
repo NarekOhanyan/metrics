@@ -48,6 +48,22 @@ class irfs:
         return np.quantile(Irfc_Sim, q, axis=0)
 
 # %%
+class forecasts:
+
+    def __init__(self, Forecast_m, Forecastc_m, Forecast_Sim=None, Forecastc_Sim=None, forecast_spec=None):
+        self.Forecast_m, self.Forecastc_m = Forecast_m, Forecastc_m
+        self.__Forecast_Sim, self.__Forecastc_Sim = Forecast_Sim, Forecastc_Sim
+        self.Spec = forecast_spec
+
+    def Forecast_q(self, q):
+        Forecast_Sim = self.__Forecast_Sim
+        return np.quantile(Forecast_Sim, q, axis=0)
+
+    def Forecastc_q(self, q):
+        Forecastc_Sim = self.__Forecastc_Sim
+        return np.quantile(Forecastc_Sim, q, axis=0)
+
+# %%
 @nb.njit
 def C(arr):
     return np.ascontiguousarray(arr)
@@ -940,6 +956,22 @@ def get_irfs_VARm(Bx, A0inv, nH):
     return Irf, Irfc
 
 # %%
+
+def get_forecasts_VARm(Y, B, /, *, model_spec, forecast_spec):
+    nC, nL, nY = model_spec['nC'], model_spec['nL'], model_spec['nY']
+    nF = forecast_spec['nF']
+    _, n1 = Y.shape
+    Bc, Bx = split_C_B(B, nC, nL, nY)
+    Y_F = np.zeros((n1+nF, nY))
+    Y_F[:n1, :] = Y.T
+    for f in range(n1, n1+nF):
+        for l in range(nL):
+            Y_F[f] += Bx[l]@Y_F[f-l-1]
+        Y_F[f] += Bc[:, 0]
+    Y_F = Y_F[n1:].T
+    return Y_F
+
+# %%
 def get_irfs_sim_VARm(Y, B, U, /, *, model_spec, irf_spec):
 
     nY, _ = Y.shape
@@ -1002,6 +1034,8 @@ class VARm(model):
         self.Irfs = None
         self.set_sample(var_names, sample, nC, nL, dfc)
 
+        self.Forecasts = None
+
     def fit(self):
 
         sample_idx, nC, nL, nY, dfc = self.Spec['sample_idx'], self.Spec['nC'], self.Spec['nL'], self.Spec['nY'], self.Spec['dfc']
@@ -1042,6 +1076,25 @@ class VARm(model):
         Irfs = irfs_VARm(Irf_m, Irfc_m, Irf_Sim, Irfc_Sim, irf_spec)
 
         self.Irfs = Irfs
+
+        return self
+
+    def forecast(self, **forecast_spec):
+
+        forecast_spec_default = self.Forecasts.Spec if hasattr(self.Forecasts, 'Spec') else {'nF': 12, 'ci': 'bs', 'nR': 100}
+        forecast_spec = {**forecast_spec_default, **forecast_spec} if forecast_spec else forecast_spec_default
+
+        nL = self.Spec['nL']
+        B = self.Est['B']
+        sample_idx = self.Spec['sample_idx']
+        model_spec = self.Spec
+        Ydata = self.Data.Ydata
+
+        Y = Ydata.iloc[sample_idx[0]-nL:sample_idx[1]+1].values.T
+
+        Y_F = get_forecasts_VARm(Y, B, model_spec=model_spec, forecast_spec=forecast_spec)
+
+        self.Forecasts = Y_F
 
         return self
 
