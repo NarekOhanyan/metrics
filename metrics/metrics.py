@@ -6,7 +6,7 @@ import datetime as dt
 import scipy.stats as spstats
 import matplotlib.pyplot as mpl
 
-use_numba = False
+use_numba = True
 
 # %%
 class block:
@@ -164,9 +164,9 @@ def ols_b_h(Y, X, dfc=True):
     else:
         invXx = np.tile(invX, (nY, 1, 1))
     V = np.diag(S).reshape((-1, 1, 1))*invXx
-    # Se = np.array([np.sqrt(np.diag(V[iY])) for iY in range(nY)])
-    Se = np.sqrt(np.outer(np.diag(S), np.diag(invX)))
-    return B, Se, V, E, S
+    # SE = np.array([np.sqrt(np.diag(V[iY])) for iY in range(nY)])
+    SE = np.sqrt(np.outer(np.diag(S), np.diag(invX)))
+    return B, SE, V, E, S
 
 ols_b_h_njit = nb.njit(ols_b_h) # doesn't work due to https://github.com/numba/numba/issues/4580
 
@@ -189,9 +189,9 @@ def fit_ardl_h(y, X, Z, nC, nI, nLy, nLx, dfc=True):
     W = np.ones((nC, n1))
     W = np.row_stack((W, Z))
     for l in range(1, nLy+1):
-        W = np.row_stack((W, np.roll(y, l, axis=1)))
+        W = np.row_stack((W, np.roll(y, l)))    # np.roll without axis argument performs the operation on a flattened array, but the result is unaffected due to the drop of first nL observations
     for l in range(1-nI, nLx+1):
-        W = np.row_stack((W, np.roll(X, l, axis=1)))
+        W = np.row_stack((W, np.roll(X, l)))
 
     Y, W = Y[:, nL:], W[:, nL:]
 
@@ -199,7 +199,6 @@ def fit_ardl_h(y, X, Z, nC, nI, nLy, nLx, dfc=True):
         B, SE, V, U, S = ols_h(Y, W, dfc)
     else:
         B, SE, V, U, S = ols_h_njit(Y, W, dfc)
-    B, SE = np.squeeze(B), np.squeeze(SE)
 
     return B, SE, V, U, S
 
@@ -213,14 +212,14 @@ def fit_var_h(Y, nC, nL, dfc=True):
     _, n1 = Y.shape
     X = np.ones((nC, n1))
     for p in range(1, nL+1):
-        X = np.row_stack((X, np.roll(Y, p)))
+        X = np.row_stack((X, np.roll(Y, p)))    # np.roll without axis argument performs the operation on a flattened array, but the result is unaffected due to the drop of first nL observations
     Y, X = Y[:, nL:], X[:, nL:]
     if not use_numba:
-        B, Se, V, U, S = ols_b_h(Y, X, dfc)
+        B, SE, V, U, S = ols_b_h(Y, X, dfc)
     else:
-        B, Se, V, U, S = ols_b_h_njit(Y, X, dfc)
+        B, SE, V, U, S = ols_b_h_njit(Y, X, dfc)
 
-    return B, Se, V, U, S
+    return B, SE, V, U, S
 
 fit_var_h_njit = nb.njit(fit_var_h)
 
@@ -235,8 +234,8 @@ def OLS_h(Ydata, Xdata, add_constant=True, dfc=True):
 def OLS_b_h(Ydata, Xdata, add_constant=True, dfc=True):
     assert ~np.isnan(Ydata).any() and ~np.isnan(Xdata).any(), 'data should not contain NaNs'
     Y, X, _ = check_data(Ydata,Xdata,add_constant)
-    B, Se, V, E, S = ols_b_h(Y, X, dfc)
-    return B, Se, V, E, S
+    B, SE, V, E, S = ols_b_h(Y, X, dfc)
+    return B, SE, V, E, S
 
 # %%
 class ardlm_irfs:
@@ -330,7 +329,9 @@ class ARDLm(model):
         X = Xdata.iloc[sample_idx[0]-nL:sample_idx[1]+1].values.T
         Z = Zdata.iloc[sample_idx[0]-nL:sample_idx[1]+1].values.T
 
-        B, SE, V, U, S = fit_ardl_h(y, X, Z, nC, nI, nLy, nLx, dfc)
+        B, SE, V, U, S = fit_ardl_h_njit(y, X, Z, nC, nI, nLy, nLx, dfc)
+
+        B, SE = np.squeeze(B), np.squeeze(SE)
 
         Bc, Bz, By, Bx = np.split(B, np.cumsum([nC, nZ, nLy*nY]))
         SEc, SEz, SEy, SEx = np.split(SE, np.cumsum([nC, nZ, nLy*nY]))
@@ -381,7 +382,7 @@ class ARDLm(model):
         nT = int(sample_idx[1] - sample_idx[0] + 1)
         sample = [Ydata.index[sample_idx[0]].strftime('%Y-%m-%d'), Ydata.index[sample_idx[1]].strftime('%Y-%m-%d')]
 
-        self.Spec = {'Y_var': Y_var, 'X_vars': X_vars, 'Z_vars': Z_vars, 'sample': sample, 'sample_idx': sample_idx, 'nC': nC, 'nI': nI, 'nL': nL, 'nLy': nLy, 'nLx': nLx, 'nY': nY, 'nX': nX, 'nZ': nZ, 'nT': nT, 'dfc': dfc}
+        self.Spec = {'Y_var': Y_var, 'X_vars': X_vars, 'Z_vars': Z_vars, 'sample': sample, 'sample_idx': sample_idx, 'nC': nC, 'nI': nI, 'nLy': nLy, 'nLx': nLx, 'nY': nY, 'nX': nX, 'nZ': nZ, 'nT': nT, 'dfc': dfc}
         self.__Default_Spec = {**self.Spec}
         self.fit()
         self.irf()
@@ -453,16 +454,16 @@ class ardlm(model):
 
         Y, W = Y[:,nL:], W[:,nL:]
 
-        B, Se, V, E, S = ols_h(Y, W)
+        B, SE, V, E, S = ols_h(Y, W)
 
-        B, Se = np.squeeze(B), np.squeeze(Se)
+        B, SE = np.squeeze(B), np.squeeze(SE)
 
         Bc, Bz, By, Bx = np.split(B,np.cumsum([nC,nZ,nLy*nY]))
-        SEc, SEz, SEy, SEx = np.split(Se,np.cumsum([nC,nZ,nLy*nY]))
+        SEc, SEz, SEy, SEx = np.split(SE,np.cumsum([nC,nZ,nLy*nY]))
 
         Bx = np.squeeze(Bx.reshape((nLx,nX)).T)
 
-        self.Est.B, self.Est.Se, self.Est.V, self.Est.E, self.Est.S = B, Se, V, E, S
+        self.Est.B, self.Est.SE, self.Est.V, self.Est.E, self.Est.S = B, SE, V, E, S
         self.Est.Bc, self.Est.Bz, self.Est.By, self.Est.Bx = Bc, Bz, By, Bx
         self.Est.SEc, self.Est.SEz, self.Est.SEy, self.Est.SEx = SEc, SEz, SEy, SEx
         self.Spec.nY, self.Spec.nX, self.Spec.nZ, self.Spec.nW, self.Spec.nT = nY, nX, nZ, nW, nT
@@ -697,7 +698,7 @@ def varols(data, nL):
     Z = np.ones((1, n1))
 
     for p in range(1, nL+1):
-        Z = np.row_stack((Z, np.roll(data, p)))
+        Z = np.row_stack((Z, np.roll(data, p)))    # np.roll without axis argument performs the operation on a flattened array, but the result is unaffected due to the drop of first nL observations
 
     Z = C(Z[:, nL:])
     Y = C(data[:, nL:])
@@ -1236,7 +1237,7 @@ class VARm(model):
 
         Y = Ydata.iloc[sample_idx[0]-nL:sample_idx[1]+1].values.T
 
-        B, SE, V, U, S = fit_var_h(Y, nC, nL, dfc)
+        B, SE, V, U, S = fit_var_h_njit(Y, nC, nL, dfc)
 
         Bc, Bx = split_C_B(B, nC, nL, nY)
         SEc, SEx = split_C_B(SE, nC, nL, nY)
