@@ -176,6 +176,35 @@ def split_C_B(B, nC, nL, nY):
     Bx = Bx.T.reshape((nL, nY, nY)).transpose((0, 2, 1))
     return Bc, Bx
 
+# %% ARDL-OLS
+def fit_ardl_h(y, X, Z, nC, nI, nLy, nLx, dfc=True):
+    """
+    Function to estimate ARDL(p,q) model with p = nLy, q = nLx using OLS
+    """
+    _, n1 = y.shape
+    nL = max(nLy, nLx)
+
+    Y = y.reshape(1, -1)
+
+    W = np.ones((nC, n1))
+    W = np.row_stack((W, Z))
+    for l in range(1, nLy+1):
+        W = np.row_stack((W, np.roll(y, l, axis=1)))
+    for l in range(1-nI, nLx+1):
+        W = np.row_stack((W, np.roll(X, l, axis=1)))
+
+    Y, W = Y[:, nL:], W[:, nL:]
+
+    if not use_numba:
+        B, SE, V, U, S = ols_h(Y, W, dfc)
+    else:
+        B, SE, V, U, S = ols_h_njit(Y, W, dfc)
+    B, SE = np.squeeze(B), np.squeeze(SE)
+
+    return B, SE, V, U, S
+
+fit_ardl_h_njit = nb.njit(fit_ardl_h)
+
 # %% VAR-OLS
 def fit_var_h(Y, nC, nL, dfc=True):
     """
@@ -220,6 +249,170 @@ class ardlm_irfs:
 
     def Irfc_q(self,q):
         return self.Irfc + spstats.norm.ppf(q)*self.Stdc
+
+# %%
+class irfs_ARDLm:
+
+    def __init__(self, Irf_m, Irfc_m, Irf_std, Irfc_std, irf_spec):
+        self.Irf_m, self.Irfc_m, self.Irf_std, self.Irfc_std = Irf_m, Irfc_m, Irf_std, Irfc_std
+        self.Spec = irf_spec
+
+    def Irf_q(self, q):
+        return self.Irf_m + spstats.norm.ppf(q)*self.Irf_std
+
+    def Irfc_q(self, q):
+        return self.Irfc_m + spstats.norm.ppf(q)*self.Irfc_std
+
+# %%
+def get_irfs_ARDLm(By, Bx, /, *, model_spec, irf_spec):
+
+    nI, nLy, nLx, nY, nX = model_spec['nI'], model_spec['nLy'], model_spec['nLx'], model_spec['nY'], model_spec['nX']
+    nH = irf_spec['nH']
+
+    Irf = np.full((nX, nH+1), np.nan)
+
+    By = np.pad(By.reshape((nY, nLy)), ((0, 0), (0, max(nH-nLy+1, 0))))
+    Bx = np.pad(Bx.reshape((nX, nI+nLx)), ((0, 0), (1-nI, max(nH-nI-nLx+1, 0))))
+
+    for h in range(nH+1):
+        for iX in range(nX):
+            Irf[iX, h] = Irf[iX, :h][::-1]@By[0, :h] + Bx[iX, h]
+
+    return Irf, np.cumsum(Irf, axis=1)
+
+# %%
+def get_irfs_std_ARDLm(B, V, /, *, model_spec, irf_spec):
+
+    nC, nLy, nY, nX, nZ = model_spec['nC'], model_spec['nLy'], model_spec['nY'], model_spec['nX'], model_spec['nZ']
+    nH, nR = irf_spec['nH'], irf_spec['nR']
+
+    Irf_R = np.full((nR, nX, nH+1), np.nan)
+    Irfc_R = np.full((nR, nX, nH+1), np.nan)
+
+    B_R = np.random.multivariate_normal(B, V, size=nR)
+    for r in range(nR):
+        B_r = B_R[r].reshape((1,-1))
+        _, _, By_r, Bx_r = np.split(B_r,np.cumsum([nC, nZ, nLy*nY]), axis=1)
+        irf_r, cirf_r = get_irfs_ARDLm(By_r, Bx_r, model_spec=model_spec, irf_spec=irf_spec)
+        Irf_R[r], Irfc_R[r] = irf_r, cirf_r
+
+    Irf_Std = Irf_R.std(axis=0)
+    Irfc_Std = Irfc_R.std(axis=0)
+
+    return Irf_Std, Irfc_Std
+
+# %% ARDL model
+
+class ARDLm(model):
+
+    def __init__(self, data, /, *, Y_var, X_vars, Z_vars=None, sample=None, add_constant=True, contemporaneous_impact=True, nLy=None, nLx=None, dfc=True):
+        super().__init__()
+
+        if not isinstance(data, pd.core.frame.DataFrame):
+            raise TypeError('data must be in pandas DataFrame format')
+
+        self.Data.data = data[[Y_var, *X_vars, *Z_vars]] if Z_vars else data[[Y_var, *X_vars]]
+        nC = 1 if add_constant else 0
+        nI = 1 if contemporaneous_impact else 0
+
+        self.Irfs = None
+        self.set_sample(Y_var, X_vars, Z_vars, sample, nC, nI, nLy, nLx, dfc)
+
+        self.Forecasts = None
+
+    def fit(self):
+
+        Y_var, X_vars, Z_vars, sample_idx, nC, nI, nLy, nLx, nY, nX, nZ, dfc = self.Spec['Y_var'], self.Spec['X_vars'], self.Spec['Z_vars'], self.Spec['sample_idx'], self.Spec['nC'], self.Spec['nI'], self.Spec['nLy'], self.Spec['nLx'], self.Spec['nY'], self.Spec['nX'], self.Spec['nZ'], self.Spec['dfc']
+        Ydata, Xdata, Zdata = self.Data.data[[Y_var]], self.Data.data[X_vars], self.Data.data[Z_vars] if Z_vars else self.Data.data[[]]
+        nL = max(nLy, nLx)
+
+        y = Ydata.iloc[sample_idx[0]-nL:sample_idx[1]+1].values.T
+        X = Xdata.iloc[sample_idx[0]-nL:sample_idx[1]+1].values.T
+        Z = Zdata.iloc[sample_idx[0]-nL:sample_idx[1]+1].values.T
+
+        B, SE, V, U, S = fit_ardl_h(y, X, Z, nC, nI, nLy, nLx, dfc)
+
+        Bc, Bz, By, Bx = np.split(B, np.cumsum([nC, nZ, nLy*nY]))
+        SEc, SEz, SEy, SEx = np.split(SE, np.cumsum([nC, nZ, nLy*nY]))
+
+        Bx = np.squeeze(Bx.reshape((nI+nLx, nX)))
+        SEx = np.squeeze(SEx.reshape((nI+nLx, nX)))
+
+        self.Est = {'Bc': Bc, 'Bz': Bz if Bz.size>0 else None, 'By': By, 'Bx': Bx, 'SEc': SEc, 'SEz': SEz if SEz.size>0 else None, 'SEy': SEy, 'SEx': SEx, 'B': B, 'SE': SE, 'V': V, 'U': U, 'S': S}
+
+        return self
+
+    def irf(self, **irf_spec):
+
+        irf_spec_default = self.Irfs.Spec if hasattr(self.Irfs, 'Spec') else {'nH': 12, 'ci': 'bs', 'nR': 100}
+        irf_spec = {**irf_spec_default, **irf_spec} if irf_spec else irf_spec_default
+
+        model_spec = self.Spec
+        By, Bx, B, V = self.Est['By'], self.Est['Bx'], self.Est['B'], self.Est['V']
+
+        # IRF at means
+        Irf_m, Irfc_m = get_irfs_ARDLm(By, Bx, model_spec=model_spec, irf_spec=irf_spec)
+
+        # IRF standard deviations
+        Irf_std, Irfc_std = get_irfs_std_ARDLm(B, V, model_spec=model_spec, irf_spec=irf_spec)
+
+        Irfs = irfs_ARDLm(Irf_m, Irfc_m, Irf_std, Irfc_std, irf_spec)
+
+        self.Irfs = Irfs
+
+        return self
+
+    def set_sample(self, Y_var, X_vars, Z_vars, sample, nC, nI, nLy, nLx, dfc):
+
+        Ydata, Xdata, Zdata = self.Data.data[[Y_var]], self.Data.data[X_vars], self.Data.data[Z_vars] if Z_vars else self.Data.data[[]]
+
+        (_, nY), (_, nX), (_, nZ) = Ydata.shape, Xdata.shape, Zdata.shape
+        nL = max(nLy, nLx)
+
+        NaN_free_idx = get_NaN_free_idx(self.Data.data)
+
+        if sample is None:
+            sample_idx = [nL+NaN_free_idx[0], NaN_free_idx[1]]
+        elif Ydata.index.get_loc(sample[0]) >= nL+NaN_free_idx[0] and NaN_free_idx[1] <= Ydata.index.get_loc(sample[1]):
+            sample_idx = [Ydata.index.get_loc(sample[0]), Ydata.index.get_loc(sample[1])]
+        else:
+            raise KeyError('Provided sample is outside of the available data range')
+
+        nT = int(sample_idx[1] - sample_idx[0] + 1)
+        sample = [Ydata.index[sample_idx[0]].strftime('%Y-%m-%d'), Ydata.index[sample_idx[1]].strftime('%Y-%m-%d')]
+
+        self.Spec = {'Y_var': Y_var, 'X_vars': X_vars, 'Z_vars': Z_vars, 'sample': sample, 'sample_idx': sample_idx, 'nC': nC, 'nI': nI, 'nL': nL, 'nLy': nLy, 'nLx': nLx, 'nY': nY, 'nX': nX, 'nZ': nZ, 'nT': nT, 'dfc': dfc}
+        self.__Default_Spec = {**self.Spec}
+        self.fit()
+        self.irf()
+
+        return self
+
+    def change_sample(self, sample=None):
+
+        default_sample = self.__Default_Spec['sample']
+        sample = default_sample if sample is None else sample
+
+        Ydata = self.Data.Ydata
+
+        Ydata_sample = Ydata.loc[sample[0]:sample[1]]
+
+        if dt.datetime.strptime(default_sample[0], '%Y-%m-%d') <= Ydata_sample.index[0] and Ydata_sample.index[-1] <= dt.datetime.strptime(default_sample[1], '%Y-%m-%d'):
+            sample_idx = [Ydata.index.get_loc(Ydata_sample.iloc[0].name), Ydata.index.get_loc(Ydata_sample.iloc[-1].name)]
+        else:
+            raise KeyError('Provided sample is outside of the available data range')
+
+        nT = int(sample_idx[1] - sample_idx[0] + 1)
+        sample = [Ydata.index[sample_idx[0]].strftime('%Y-%m-%d'), Ydata.index[sample_idx[1]].strftime('%Y-%m-%d')]
+
+        self.Spec['nT'] = nT
+        self.Spec['sample'] = sample
+        self.Spec['sample_idx'] = sample_idx
+
+        self.fit()
+        self.irf()
+
+        return self
 
 # %% ARDL
 class ardlm(model):
