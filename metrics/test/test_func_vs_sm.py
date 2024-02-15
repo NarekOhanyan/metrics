@@ -18,16 +18,20 @@ nT = 80
 a = np.random.random((100, 3))
 data = np.random.random((nT, 10))
 
+nC = 1
 nL, nH = 3, 2
 
 Y = data[:, :5].T
 X = data[:, :].T
+
+nY = Y.shape[0]
 
 # %%
 
 print(f'\nnT = {nT}, nL = {nL}, nH = {nH}\n')
 
 # %%
+
 
 class test_lpols_vs_sm_OLS(unittest.TestCase):
     """
@@ -47,15 +51,14 @@ class test_lpols_vs_sm_OLS(unittest.TestCase):
             nX = X.shape[0]
             for iy, y in enumerate(Y):
                 for h in range(0, nH + 1):
-                    ymat = y[nL - 1 + h : nT - (nH - h)].T
+                    ymat = y[nL - 1 + h: nT - (nH - h)].T
                     Xmat = np.ones((nT - nL - nH + 1, 1))
                     for l in range(0, nL):
-                        Xmat = np.column_stack((Xmat, X[:, nL - 1 - l : nT - nH - l].T))
+                        Xmat = np.column_stack((Xmat, X[:, nL - 1 - l: nT - nH - l].T))
                     lm = sm.OLS(ymat, exog=Xmat).fit()
-                    assert (
-                        abs(lm.params[1 : nX + 1] - B[h, iy, :]) < 1e-10
-                    ).all(), '\nTest 1 failed'
-        except:
+                    assert (abs(lm.params[1: nX + 1] - B[h, iy, :]) < 1e-10).all(), '\nTest 1 failed'
+        except AssertionError:
+            print('Test Failed')
             raise
         else:
             print('Test Passed')
