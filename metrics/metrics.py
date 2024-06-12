@@ -1288,7 +1288,7 @@ class VARm(model):
 
         Y_F = get_forecasts_VARm(Y, B, model_spec=model_spec, forecast_spec=forecast_spec)
 
-        self.Forecasts = Y_F
+        self.Forecasts = np.column_stack((Y[:, -1], Y_F))
 
         return self
 
@@ -1302,10 +1302,12 @@ class VARm(model):
 
         if sample is None:
             sample_idx = [nL+NaN_free_idx[0], NaN_free_idx[1]]
-        elif Ydata.index.get_loc(sample[0]) >= nL+NaN_free_idx[0] and NaN_free_idx[1] <= Ydata.index.get_loc(sample[1]):
-            sample_idx = [Ydata.index.get_loc(sample[0]), Ydata.index.get_loc(sample[1])]
         else:
-            raise KeyError('Provided sample is outside of the available data range')
+            sample = [dt.datetime.strptime(sample[0], '%Y-%m-%d'), dt.datetime.strptime(sample[1], '%Y-%m-%d')]
+            if nL+NaN_free_idx[0] <= Ydata.index.get_loc(sample[0]) and Ydata.index.get_loc(sample[1]) <= NaN_free_idx[1]:
+                sample_idx = [Ydata.index.get_loc(sample[0]), Ydata.index.get_loc(sample[1])]
+            else:
+                raise KeyError(f'Provided sample {sample[0].strftime("%Y-%m-%d")} - {sample[1].strftime("%Y-%m-%d")} is outside of the available data range {Ydata.index[nL+NaN_free_idx[0]].strftime("%Y-%m-%d")} - {Ydata.index[NaN_free_idx[1]].strftime("%Y-%m-%d")}')
 
         nT = int(sample_idx[1] - sample_idx[0] + 1)
         sample = [Ydata.index[sample_idx[0]].strftime('%Y-%m-%d'), Ydata.index[sample_idx[1]].strftime('%Y-%m-%d')]
