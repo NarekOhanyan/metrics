@@ -1246,6 +1246,22 @@ class VARm(model):
 
         return self
 
+    def check_stability(self):
+
+        nL, nY = self.Spec['nL'], self.Spec['nY']
+        Bx = self.Est['Bx']
+
+        # companion matrix
+        BB = np.zeros((nL*nY, nL*nY))
+        BB[:nY, :] = np.column_stack(Bx)
+        BB[nY:, :-nY] = np.eye(nY*(nL-1))
+
+        stable = np.all(np.abs(np.linalg.eigvals(BB)) < 1)
+
+        self.Est['Stable'] = stable
+
+        return self
+
     def irf(self, **irf_spec):
 
         irf_spec_default = self.Irfs.Spec if hasattr(self.Irfs, 'Spec') else {'nH': 12, 'ci': 'bs', 'nR': 100}
@@ -1315,6 +1331,7 @@ class VARm(model):
         self.Spec = {'var_names': var_names, 'sample': sample, 'sample_idx': sample_idx, 'nC': nC, 'nL': nL, 'nY': nY, 'nT': nT, 'dfc': dfc}
         self.__Default_Spec = {**self.Spec}
         self.fit()
+        self.check_stability()
 
         return self
 
@@ -1340,6 +1357,7 @@ class VARm(model):
         self.Spec['sample_idx'] = sample_idx
 
         self.fit()
+        self.check_stability()
 
         return self
 
