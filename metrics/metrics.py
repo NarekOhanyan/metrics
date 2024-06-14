@@ -1246,6 +1246,22 @@ class VARm(model):
 
         return self
 
+    def check_stability(self):
+
+        nL, nY = self.Spec['nL'], self.Spec['nY']
+        Bx = self.Est['Bx']
+
+        # companion matrix
+        BB = np.zeros((nL*nY, nL*nY))
+        BB[:nY, :] = np.column_stack(Bx)
+        BB[nY:, :-nY] = np.eye(nY*(nL-1))
+
+        stable = np.all(np.abs(np.linalg.eigvals(BB)) < 1)
+
+        self.Est['Stable'] = stable
+
+        return self
+
     def irf(self, **irf_spec):
 
         irf_spec_default = self.Irfs.Spec if hasattr(self.Irfs, 'Spec') else {'nH': 12, 'ci': 'bs', 'nR': 100}
@@ -1298,16 +1314,16 @@ class VARm(model):
 
         _, nY = Ydata.shape
 
-        sample = [dt.datetime.strptime(sample[0], '%Y-%m-%d'), dt.datetime.strptime(sample[1], '%Y-%m-%d')]
-
         NaN_free_idx = get_NaN_free_idx(Ydata)
 
         if sample is None:
             sample_idx = [nL+NaN_free_idx[0], NaN_free_idx[1]]
-        elif nL+NaN_free_idx[0] <= Ydata.index.get_loc(sample[0]) and Ydata.index.get_loc(sample[1]) <= NaN_free_idx[1]:
-            sample_idx = [Ydata.index.get_loc(sample[0]), Ydata.index.get_loc(sample[1])]
         else:
-            raise KeyError(f'Provided sample {sample[0].strftime("%Y-%m-%d")} - {sample[1].strftime("%Y-%m-%d")} is outside of the available data range {Ydata.index[nL+NaN_free_idx[0]].strftime("%Y-%m-%d")} - {Ydata.index[NaN_free_idx[1]].strftime("%Y-%m-%d")}')
+            sample = [dt.datetime.strptime(sample[0], '%Y-%m-%d'), dt.datetime.strptime(sample[1], '%Y-%m-%d')]
+            if nL+NaN_free_idx[0] <= Ydata.index.get_loc(sample[0]) and Ydata.index.get_loc(sample[1]) <= NaN_free_idx[1]:
+                sample_idx = [Ydata.index.get_loc(sample[0]), Ydata.index.get_loc(sample[1])]
+            else:
+                raise KeyError(f'Provided sample {sample[0].strftime("%Y-%m-%d")} - {sample[1].strftime("%Y-%m-%d")} is outside of the available data range {Ydata.index[nL+NaN_free_idx[0]].strftime("%Y-%m-%d")} - {Ydata.index[NaN_free_idx[1]].strftime("%Y-%m-%d")}')
 
         nT = int(sample_idx[1] - sample_idx[0] + 1)
         sample = [Ydata.index[sample_idx[0]].strftime('%Y-%m-%d'), Ydata.index[sample_idx[1]].strftime('%Y-%m-%d')]
