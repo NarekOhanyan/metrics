@@ -1149,14 +1149,14 @@ def get_forecasts_VARm(Y, B, /, *, model_spec, forecast_spec):
     nF = forecast_spec['nF']
     _, n1 = Y.shape
     Bc, Bx = split_C_B(B, nC, nL, nY)
-    Y_F = np.zeros((n1+nF, nY))
-    Y_F[:n1, :] = Y.T
+    Fcs = np.zeros((n1+nF, nY))
+    Fcs[:n1, :] = Y.T
     for f in range(n1, n1+nF):
         for l in range(nL):
-            Y_F[f] += Bx[l]@Y_F[f-l-1]
-        Y_F[f] += Bc[:, 0]
-    Y_F = Y_F[n1:].T
-    return Y_F
+            Fcs[f] += Bx[l]@Fcs[f-l-1]
+        Fcs[f] += Bc[:, 0]
+    Fcs, Fcsc = Fcs[n1-1:].T, np.cumsum(Fcs[n1-1:].T, 1)
+    return Fcs, Fcsc
 
 # %%
 def get_irfs_sim_VARm(Y, B, U, /, *, model_spec, irf_spec):
@@ -1195,6 +1195,11 @@ def get_irfs_sim_VARm(Y, B, U, /, *, model_spec, irf_spec):
 
 # %%
 class irfs_VARm(irfs):
+    def __init__(self, *args, **kwargs):
+        super().__init__( *args, **kwargs)
+
+# %%
+class forecasts_VARm(forecasts):
     def __init__(self, *args, **kwargs):
         super().__init__( *args, **kwargs)
 
@@ -1275,7 +1280,7 @@ class VARm(model):
         # IRF simulations
         Irf_sim, Irfc_sim = get_irfs_sim_VARm(Y, B, U, model_spec=model_spec, irf_spec=irf_spec)
 
-        Irfs = irfs_VARm(Irf_m, Irfc_m, Irf_sim, Irfc_sim, irf_spec)
+        Irfs = irfs_VARm(Irf_m, Irfc_m, Irf_sim, Irfc_sim, irf_spec=irf_spec)
 
         self.Irfs = Irfs
 
@@ -1283,7 +1288,7 @@ class VARm(model):
 
     def forecast(self, **forecast_spec):
 
-        forecast_spec_default = self.Forecasts.Spec if hasattr(self.Forecasts, 'Spec') else {'nF': 12, 'ci': 'bs', 'nR': 100}
+        forecast_spec_default = self.Forecasts.Spec if hasattr(self.Forecasts, 'Spec') else {'nF': 12, 'ci': 'bs', 'nR': 100, 'period': None}
         forecast_spec = {**forecast_spec_default, **forecast_spec} if forecast_spec else forecast_spec_default
 
         nL = self.Spec['nL']
@@ -1291,12 +1296,19 @@ class VARm(model):
         sample_idx = self.Spec['sample_idx']
         model_spec = self.Spec
         Ydata = self.Data.Ydata
+        if forecast_spec['period'] is not None:
+            period_idx = [sample_idx[0], Ydata.index.get_loc(forecast_spec['period'])]
+        else:
+            period_idx = sample_idx
+        forecast_spec['period'] = Ydata.index[period_idx[1]].strftime('%Y-%m-%d')
 
-        Y = Ydata.iloc[sample_idx[0]-nL:sample_idx[1]+1].values.T
+        Y = Ydata.iloc[period_idx[0]-nL:period_idx[1]+1].values.T
 
-        Y_F = get_forecasts_VARm(Y, B, model_spec=model_spec, forecast_spec=forecast_spec)
+        Fcs_m, Fcsc_m = get_forecasts_VARm(Y, B, model_spec=model_spec, forecast_spec=forecast_spec)
 
-        self.Forecasts = np.column_stack((Y[:, -1], Y_F))
+        Forecasts = forecasts_VARm(Fcs_m, Fcsc_m, None, None, forecast_spec=forecast_spec)
+
+        self.Forecasts = Forecasts
 
         return self
 
