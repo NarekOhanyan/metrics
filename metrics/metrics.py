@@ -1010,7 +1010,7 @@ def get_sirf_from_irf(Psi, A0inv, impulse='unit'):
 # get_sirf_from_irf_njit = nb.njit(get_sirf_from_irf)
 
 # %% Bootstrap
-def bs(Y, U, B, /, *, model_spec, irf_spec, bs_dist = 'Rademacher'):
+def bs_irf(Y, U, B, /, *, model_spec, irf_spec, bs_dist = 'Rademacher'):
     nC, nL, nY, nT, dfc = model_spec['nC'], model_spec['nL'], model_spec['nY'], model_spec['nT'], model_spec['dfc']
     nH, ci = irf_spec['nH'], irf_spec['ci']
     Y0 = Y[:, :nL]
@@ -1038,7 +1038,28 @@ def bs(Y, U, B, /, *, model_spec, irf_spec, bs_dist = 'Rademacher'):
         ir_, irc_ = get_irfs_VARm(Bx_, A0inv_, nH)
     return ir_, irc_
 
-bs_njit = nb.njit(bs)
+# %% Bootstrap
+def bs_fcs(Y, U, B, /, *, model_spec, forecast_spec, bs_dist = 'Rademacher'):
+    nC, nL, nY, nT = model_spec['nC'], model_spec['nL'], model_spec['nY'], model_spec['nT']
+    nF, ci = forecast_spec['nF'], forecast_spec['ci']
+    Y0 = Y[:, -nL:]
+    Bc, Bx = split_C_B(B, nC, nL, nY)
+    if ci == 'bs':
+        idx_r = np.random.choice(nT, size=nF)
+        U_ = U[:, idx_r]
+    if ci == 'wbs':
+        if bs_dist == 'Rademacher':
+            rescale = np.random.choice((-1, 1), size=(1, nF))
+        if bs_dist == 'Normal':
+            rescale = np.random.normal(size=(1, nF))
+        idx_r = np.random.choice(nT, size=nF)
+        U_ = U[:, idx_r]*rescale
+    if not use_numba:
+        fcs_ = sim_var(Y0, Bc, Bx, U_)
+    else:
+        fcs_ = sim_var_njit(Y0, Bc, Bx, U_)
+    fcs_, fcsc_ = fcs_[:, nL-1:], np.cumsum(fcs_[:, nL-1:], 1)
+    return fcs_, fcsc_
 
 # %% Bootstrap
 def get_bs(Y, c, B, U, S, UM, nL, nY, nH, nT, /, *, method=None, impulse=None, cl=None, ci=None, idv=None, M=None):
@@ -1167,7 +1188,7 @@ def get_irfs_sim_VARm(Y, B, U, /, *, model_spec, irf_spec):
     if ci in ['bs','wbs']:
         Irf_sim, Irfc_sim = np.full((nR, nY, nY, nH+1), np.nan), np.full((nR, nY, nY, nH+1), np.nan)
         for r in range(nR):
-            Irf_sim[r], Irfc_sim[r] = bs(Y, U, B, model_spec=model_spec, irf_spec=irf_spec)
+            Irf_sim[r], Irfc_sim[r] = bs_irf(Y, U, B, model_spec=model_spec, irf_spec=irf_spec)
 
     return Irf_sim, Irfc_sim
 
@@ -1192,6 +1213,19 @@ def get_irfs_sim_VARm(Y, B, U, /, *, model_spec, irf_spec):
     #     return Irf, Irfc, Irf_sim, Irfc_sim
     # else:
     #     return Irf, Irfc, None, None
+
+# %%
+def get_fcs_sim_VARm(Y, B, U, /, *, model_spec, forecast_spec):
+
+    nY, _ = Y.shape
+    nF, ci, nR = forecast_spec['nF'], forecast_spec['ci'], forecast_spec['nR']
+
+    if ci in ['bs','wbs']:
+        Fcs_sim, Fcsc_sim = np.full((nR, nY, nF+1), np.nan), np.full((nR, nY, nF+1), np.nan)
+        for r in range(nR):
+            Fcs_sim[r], Fcsc_sim[r] = bs_fcs(Y, U, B, model_spec=model_spec, forecast_spec=forecast_spec)
+
+    return Fcs_sim, Fcsc_sim
 
 # %%
 class irfs_VARm(irfs):
@@ -1292,7 +1326,7 @@ class VARm(model):
         forecast_spec = {**forecast_spec_default, **forecast_spec} if forecast_spec else forecast_spec_default
 
         nL = self.Spec['nL']
-        B = self.Est['B']
+        B, U = self.Est['B'], self.Est['U']
         sample_idx = self.Spec['sample_idx']
         model_spec = self.Spec
         Ydata = self.Data.Ydata
@@ -1304,9 +1338,13 @@ class VARm(model):
 
         Y = Ydata.iloc[period_idx[0]-nL:period_idx[1]+1].values.T
 
+        # Mean forecasts
         Fcs_m, Fcsc_m = get_forecasts_VARm(Y, B, model_spec=model_spec, forecast_spec=forecast_spec)
 
-        Forecasts = forecasts_VARm(Fcs_m, Fcsc_m, None, None, forecast_spec=forecast_spec)
+        # Simulated forecasts
+        Fcs_sim, Fcsc_sim = get_fcs_sim_VARm(Y, B, U, model_spec=model_spec, forecast_spec=forecast_spec)
+
+        Forecasts = forecasts_VARm(Fcs_m, Fcsc_m, Fcs_sim, Fcsc_sim, forecast_spec=forecast_spec)
 
         self.Forecasts = Forecasts
 
