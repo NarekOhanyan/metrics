@@ -154,11 +154,11 @@ def ols_b_h(Y, X, dfc=True):
     df = nN-nX if dfc else nN
     S = (1/df)*(E@E.T)
     invX = C(np.linalg.inv(X@X.T))
-    if use_numba:
+    if not use_numba:
+        invXx = np.tile(invX, (nY, 1, 1))
+    else:
         # invXx = np.repeat(invX[np.newaxis, :, :], nY, axis=0)
         invXx = np.repeat(invX, nY).reshape((nX*nX,nY)).T.reshape((nY,nX,nX))
-    else:
-        invXx = np.tile(invX, (nY, 1, 1))
     V = np.diag(S).reshape((-1, 1, 1))*invXx
     # SE = np.array([np.sqrt(np.diag(V[iY])) for iY in range(nY)])
     SE = np.sqrt(np.outer(np.diag(S), np.diag(invX)))
@@ -169,14 +169,17 @@ ols_b_h_njit = nb.njit(ols_b_h) # doesn't work due to https://github.com/numba/n
 # %%
 def split_C_B(B, nC, nL, nY):
     Bc, Bx = np.split(B, np.array([nC]), axis=1)
-    Bx = Bx.T.reshape((nL, nY, nY)).transpose((0, 2, 1))
+    Bx = C(Bx).T.reshape((nL, nY, nY)).transpose((0, 2, 1))
     return Bc, Bx
+
+split_C_B_njit = nb.njit(split_C_B)
 
 # %% ARDL-OLS
 def fit_ardl_h(y, X, Z, nC, nI, nLy, nLx, dfc=True):
     """
     Function to estimate ARDL(p,q) model with p = nLy, q = nLx using OLS
     """
+    y, X, Z = C(y), C(X), C(Z)
     _, n1 = y.shape
     nL = max(nLy, nLx)
 
@@ -325,7 +328,10 @@ class ARDLm(model):
 
         y, X, Z = Ydata.iloc[sample_idx[0]-nL:sample_idx[1]+1].values.T, Xdata.iloc[sample_idx[0]-nL:sample_idx[1]+1].values.T, Zdata.iloc[sample_idx[0]-nL:sample_idx[1]+1].values.T
 
-        B, SE, V, U, S = fit_ardl_h_njit(y, X, Z, nC, nI, nLy, nLx, dfc)
+        if not use_numba:
+            B, SE, V, U, S = fit_ardl_h(y, X, Z, nC, nI, nLy, nLx, dfc)
+        else:
+            B, SE, V, U, S = fit_ardl_h_njit(y, X, Z, nC, nI, nLy, nLx, dfc)
 
         B, SE = np.squeeze(B), np.squeeze(SE)
 
@@ -1001,13 +1007,20 @@ def get_sirf_from_irf(Psi, A0inv, impulse='unit'):
         impulse_scale = np.diag(1/np.diag(A0inv))
     elif impulse == '1sd':
         impulse_scale = np.eye(A0inv.shape[0])
-    else:
-        impulse_scale = impulse*np.diag(1/np.diag(A0inv))
     Impact = A0inv@impulse_scale
-    Irf, Irfc = Psi@Impact, np.cumsum(Psi@Impact, 0)
+    if not use_numba:
+        Irf, Irfc = Psi@Impact, np.cumsum(Psi@Impact, 0)
+    else:
+        Irf, Irfc = np.full_like(Psi, np.nan), np.full_like(Psi, np.nan)
+        for h in range(Psi.shape[0]):
+            Irf[h] = C(Psi[h])@C(Impact)
+            if h == 0:
+                Irfc[h] = Irf[h]
+            else:
+                Irfc[h] = Irfc[h-1] + Irf[h]
     return Irf, Irfc
 
-# get_sirf_from_irf_njit = nb.njit(get_sirf_from_irf)
+get_sirf_from_irf_njit = nb.njit(get_sirf_from_irf)
 
 # %% Bootstrap
 def bs_irf(Y, U, B, /, *, model_spec, irf_spec, bs_dist = 'Rademacher'):
@@ -1024,18 +1037,18 @@ def bs_irf(Y, U, B, /, *, model_spec, irf_spec, bs_dist = 'Rademacher'):
         if bs_dist == 'Normal':
             rescale = np.random.normal(size=(1, nT))
         U_ = U*rescale
-    if use_numba:
-        Y_ = sim_var_njit(Y0, Bc, Bx, U_)
-        B_, _, _, _, S_ = fit_var_h_njit(Y_, nC, nL, dfc)
-        _, Bx_ = split_C_B(B_, nC, nL, nY)
-        A0inv_ = np.linalg.cholesky(S_)
-        ir_, irc_ = get_irfs_VARm(Bx_, A0inv_, nH)
-    else:
+    if not use_numba:
         Y_ = sim_var(Y0, Bc, Bx, U_)
         B_, _, _, _, S_ = fit_var_h(Y_, nC, nL, dfc)
         _, Bx_ = split_C_B(B_, nC, nL, nY)
         A0inv_ = np.linalg.cholesky(S_)
         ir_, irc_ = get_irfs_VARm(Bx_, A0inv_, nH)
+    else:
+        Y_ = sim_var_njit(Y0, Bc, Bx, U_)
+        B_, _, _, _, S_ = fit_var_h_njit(Y_, nC, nL, dfc)
+        _, Bx_ = split_C_B_njit(B_, nC, nL, nY)
+        A0inv_ = np.linalg.cholesky(S_)
+        ir_, irc_ = get_irfs_VARm_njit(Bx_, A0inv_, nH)
     return ir_, irc_
 
 # %% Bootstrap
@@ -1077,18 +1090,18 @@ def get_bs(Y, c, B, U, S, UM, nL, nY, nH, nT, /, *, method=None, impulse=None, c
         UM_r = UM[:, :]*rescale
     U_r = UM_r[:nY, :]
     M_r = UM_r[nY:, :]
-    if use_numba:
-        Y_r = varsim_njit(c, B, U_r, Y0_r)
-        c_r_, B_r_, U_r_, S_r_ = varols_njit(Y_r, nL)
-        Psi_ = get_Psi_from_Bx_njit(B_r_, nH)
-        A0inv_ = get_A0inv(method=method, U=U_r_, S=S_r_, idv=idv, M=M_r)
-        ir_, irc_ = get_sirf_from_irf(Psi_, A0inv_, impulse)
-    else:
+    if not use_numba:
         Y_r = varsim(c, B, U_r, Y0_r)
         c_r_, B_r_, U_r_, S_r_ = varols(Y_r, nL)
         Psi_ = get_Psi_from_Bx(B_r_, nH)
         A0inv_ = get_A0inv(method=method, U=U_r_, S=S_r_, idv=idv, M=M_r)
         ir_, irc_ = get_sirf_from_irf(Psi_, A0inv_, impulse)
+    else:
+        Y_r = varsim_njit(c, B, U_r, Y0_r)
+        c_r_, B_r_, U_r_, S_r_ = varols_njit(Y_r, nL)
+        Psi_ = get_Psi_from_Bx_njit(B_r_, nH)
+        A0inv_ = get_A0inv(method=method, U=U_r_, S=S_r_, idv=idv, M=M_r)
+        ir_, irc_ = get_sirf_from_irf_njit(Psi_, A0inv_, impulse)
     return ir_, irc_
 
 get_bs_njit = nb.njit(get_bs)
@@ -1158,10 +1171,12 @@ def get_irfs(Y,c,B,U,S,/,*,nH,method=None,impulse=None,cl=None,ci=None,nR=1000,i
 
 # %%
 def get_irfs_VARm(Bx, A0inv, nH):
-    Psi = get_Psi_from_Bx(Bx, nH)
-    Irf, Irfc = get_sirf_from_irf(Psi, A0inv)
+    Psi = get_Psi_from_Bx(Bx, nH) if not use_numba else get_Psi_from_Bx_njit(Bx, nH)
+    Irf, Irfc = get_sirf_from_irf(Psi, A0inv) if not use_numba else get_sirf_from_irf_njit(Psi, A0inv)
     Irf, Irfc = Irf.transpose((2, 1, 0)), Irfc.transpose((2, 1, 0))
     return Irf, Irfc
+
+get_irfs_VARm_njit = nb.njit(get_irfs_VARm)
 
 # %%
 
@@ -1268,7 +1283,10 @@ class VARm(model):
 
         Y = Ydata.iloc[sample_idx[0]-nL:sample_idx[1]+1].values.T
 
-        B, SE, V, U, S = fit_var_h_njit(Y, nC, nL, dfc)
+        if not use_numba:
+            B, SE, V, U, S = fit_var_h(Y, nC, nL, dfc)
+        else:
+            B, SE, V, U, S = fit_var_h_njit(Y, nC, nL, dfc)
 
         Bc, Bx = split_C_B(B, nC, nL, nY)
         SEc, SEx = split_C_B(SE, nC, nL, nY)
