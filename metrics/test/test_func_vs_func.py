@@ -1,6 +1,6 @@
 # %%
 """
-Test fit_var_h vs varols
+Test different functions against each other
 """
 import sys
 import unittest
@@ -16,24 +16,18 @@ import metrics
 
 # %%
 
-nT = 100
-a = np.random.random((100, 3))
+nT = 80
 data = np.random.random((nT, 10))
 
-nC = 1
-nL, nH = 3, 2
+nC, nI = 1, 1
+nL, nLx, nLy, nH = 3, 4, 5, 2
 
-Y = data[:, :5].T
-X = data[:, :].T
-
-df_Ydata = pd.DataFrame(Y.T, index=pd.date_range(start=dt.datetime(2000, 1, 1), periods=100))
-df_Xdata = pd.DataFrame(X.T, index=pd.date_range(start=dt.datetime(2000, 1, 1), periods=100))
+Y, X, Z = data[:, :3].T, data[:, 3:7].T, data[:, 7:].T
 
 nY = Y.shape[0]
 
-# %%
-
-print(f'\nnT = {nT}, nL = {nL}, nH = {nH}\n')
+df_Ydata = pd.DataFrame(Y.T, index=pd.date_range(start=dt.datetime(2000, 1, 1), periods=nT))
+df_Xdata = pd.DataFrame(X.T, index=pd.date_range(start=dt.datetime(2000, 1, 1), periods=nT))
 
 # %%
 
@@ -43,7 +37,7 @@ class test_fit_var_h_vs_varols(unittest.TestCase):
     Test class
     """
 
-    def test(self):
+    def test_fit_var_h(self):
         """
         The test
         """
@@ -70,7 +64,7 @@ class test_VARm_vs_varm(unittest.TestCase):
     Test class
     """
 
-    def test(self):
+    def test_VARm(self):
         """
         The test
         """
@@ -95,16 +89,18 @@ class test_ARDLm_vs_ardlm(unittest.TestCase):
     Test class
     """
 
-    def test(self):
+    def test_ARDLm(self):
         """
         The test
         """
 
         try:
-            Mdl = metrics.ARDLm(df_Ydata, Y_var=0, X_vars=[1, 2], nLy=2, nLx=3).irf()
+            Mdl = metrics.ARDLm(df_Ydata, Y_var=0, X_vars=[1, 2], nLy=2, nLx=3, contemporaneous_impact=False).irf()
             Mdl1 = metrics.ardlm(df_Ydata[0], df_Ydata[[1, 2]], nLy=2, nLx=3)
             Mdl1.irf(nH=12, nR=100)
 
+            # print(Mdl1.Est.Bc, np.squeeze(Mdl.Est['Bc']))
+            print(Mdl1.Est.By, np.squeeze(Mdl.Est['By']))
             assert (abs(Mdl1.Est.Bc - np.squeeze(Mdl.Est['Bc'])) < 1e-10).all(), "\nTest 1 failed"
             assert (abs(Mdl1.Est.By.T - np.squeeze(Mdl.Est['By'])) < 1e-10).all(), "\nTest 2 failed"
             assert (abs(Mdl1.Est.Bx.T - np.squeeze(Mdl.Est['Bx'])) < 1e-10).all(), "\nTest 3 failed"
