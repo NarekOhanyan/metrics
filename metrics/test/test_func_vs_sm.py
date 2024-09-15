@@ -1,10 +1,12 @@
 # %%
 """
-Test lpols vs OLS from statsmodels
+Test metrics functions against statsmodels
 """
 import sys
 import unittest
 import numpy as np
+import pandas as pd
+import datetime as dt
 import statsmodels.api as sm
 # import statsmodels.formula.api as smf
 sys.path.append('../')
@@ -15,36 +17,33 @@ import metrics
 # %%
 
 nT = 80
-a = np.random.random((100, 3))
 data = np.random.random((nT, 10))
 
-nC = 1
-nL, nH = 3, 2
+nC, nI = 1, 1
+nL, nLx, nLy, nH = 3, 4, 5, 2
 
-Y = data[:, :5].T
-X = data[:, :].T
+Y, X, Z = data[:, :3].T, data[:, :].T, data[:, 7:].T
 
 nY = Y.shape[0]
 
+df_Ydata = pd.DataFrame(Y.T, index=pd.date_range(start=dt.datetime(2000, 1, 1), periods=nT))
+df_Xdata = pd.DataFrame(X.T, index=pd.date_range(start=dt.datetime(2000, 1, 1), periods=nT))
+
 # %%
 
-print(f'\nnT = {nT}, nL = {nL}, nH = {nH}\n')
 
-# %%
-
-
-class test_lpols_vs_sm_OLS(unittest.TestCase):
+class test_lpm_vs_sm_OLS(unittest.TestCase):
     """
     Test class
     """
 
-    def test(self):
+    def test_lpm(self):
         """
         The test
         """
 
         try:
-            LPM = metrics.lpm(data, nL=nL, nH=nH, Y_var_names=["0", "1", "2", "3", "4"])
+            LPM = metrics.lpm(data, nL=nL, nH=nH, Y_var_names=["0", "1", "2"])
             # B,U,S = metrics.lpols(X,Y,nL,nH)
             B = LPM.model.parameters.B
 
