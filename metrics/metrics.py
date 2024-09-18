@@ -2159,4 +2159,68 @@ class sfm:
         fac = (1/nN)*(X@lam.T)
         return fac, lam
 
+
+# %% VAR model forecast evaluation
+
+class FE_VARm:
+
+    def __init__(self, df, /, *, var_names, nL, nF, sample=None, period=None, in_sample=False):
+
+        freq = df.index.freq
+
+        Mdl_full = VARm(df, nL=nL, var_names=var_names, sample=sample)
+        nY, sample = Mdl_full.Spec['nY'], Mdl_full.Spec['sample']
+
+        df_F = pd.DataFrame(df[var_names]).reindex(pd.date_range(start=df.index[0], periods=df.shape[0]+nF, freq=freq))
+
+        if period is None:
+            period = sample if in_sample else [df.index[df.index.get_loc(sample[0])+(df.index.get_loc(sample[1])-df.index.get_loc(sample[0]))//2].strftime('%Y-%m-%d'), sample[1]]
+
+        if in_sample:
+            Mdl = Mdl_full
+
+        for t in df.loc[period[0]:period[1]].index:
+            if not in_sample:
+                Mdl = Mdl_full.change_sample(sample=(sample[0], t))
+            Mdl = Mdl.forecast(nF=nF, period=t)
+            Forecast = Mdl.Forecasts.Fcs_m
+            df_f = pd.DataFrame(Forecast.T if Mdl.Est['Stable'] else np.full_like(Forecast.T, np.nan), index=pd.date_range(t, periods=nF+1, freq=freq), columns=['_f_'+var_name+'_'+t.strftime('%Y%m%d') for var_name in var_names])
+            df_F = df_F.join(df_f, how='outer')
+
+        df_E = df_F[[c for c in df_F.columns if c.startswith('_f_')]]               # take forecasts
+        df_E = df_E.apply(lambda x: df_F[x.name[3:len(x.name)-9]]-x)                # calculate forecast errors
+        df_E = df_E.loc[period[0]:period[1]]                                        # take only necessary values
+
+        E = df_E.values                                                             # organize forecast errors
+        row_roll = np.arange(nY*(E.shape[0]-1), -nY, -nY)
+        row_roll = np.arange(nY*(E.shape[0]-1), -nY, -nY)
+        rows, columns = np.ogrid[:E.shape[0], :E.shape[1]]
+        columns_new = columns - row_roll[:, np.newaxis]
+        E = E[rows, columns_new]
+
+        column_roll = np.repeat(list(range(E.shape[0]-1, -1, -1)), nY)
+        rows, columns = np.ogrid[:E.shape[0], :E.shape[1]]
+        rows_new = rows + column_roll[np.newaxis, :]
+        rows_new[rows_new>=E.shape[0]] -= E.shape[0]
+        E = E[rows_new, columns]
+
+        E = np.column_stack((np.fliplr(E)[:, :nY*(nF+1)], np.full((E.shape[0], max(0, nY*(nF+1)-df_E.shape[1])), np.nan)))
+
+        df_E = pd.DataFrame(E, index=df_E.index, columns=['_e_'+var_name+f'_f{iF}' for iF in range(0, nF+1) for var_name in var_names[::-1]])
+        df_E = df_E[['_e_'+var_name+f'_f{iF}' for iF in range(0, nF+1) for var_name in var_names]]
+
+        RMSFE = pd.DataFrame([df_E.map(np.square).apply(np.mean).apply(np.sqrt)[[c for c in df_E.columns if varname in c]].values for varname in var_names], index=var_names, columns=range(0, nF+1))
+
+        STD = df.loc[period[0]:period[1], var_names].std()
+
+        self.var_names = var_names
+        self.sample = sample
+        self.period = period
+        self.nL = nL
+        self.nF = nF
+        self.df_F = df_F
+        self.df_E = df_E
+        self.RMSFE = RMSFE
+        self.STD = STD
+
 # %%
