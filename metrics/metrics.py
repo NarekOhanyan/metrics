@@ -82,8 +82,8 @@ def check_data(Ydata, Xdata, add_constant):
     Ydata = Ydata.reshape((-1,Ydata.shape[1]))
     nY, _ = Ydata.shape
     nC = 1 if add_constant else 0
-    cXdata = np.row_stack((np.ones((nC,Xdata.shape[1])),Xdata))
-    YXdata = np.row_stack((Ydata,cXdata))
+    cXdata = np.vstack((np.ones((nC,Xdata.shape[1])),Xdata))
+    YXdata = np.vstack((Ydata,cXdata))
     YXdata = YXdata[:,~np.isnan(YXdata).any(axis=0)]
     return YXdata[:nY], YXdata[nY:], cXdata
 
@@ -186,11 +186,11 @@ def fit_ardl_h(y, X, Z, nC, nI, nLy, nLx, dfc=True):
     Y = y.reshape(1, -1)
 
     W = np.ones((nC, n1))
-    W = np.row_stack((W, Z))
+    W = np.vstack((W, Z))
     for l in range(1, nLy+1):
-        W = np.row_stack((W, np.roll(y, l)))    # np.roll without axis argument performs the operation on a flattened array, but the result is unaffected due to the drop of first nL observations
+        W = np.vstack((W, np.roll(y, l)))    # np.roll without axis argument performs the operation on a flattened array, but the result is unaffected due to the drop of first nL observations
     for l in range(1-nI, nLx+1):
-        W = np.row_stack((W, np.roll(X, l)))
+        W = np.vstack((W, np.roll(X, l)))
 
     Y, W = Y[:, nL:], W[:, nL:]
 
@@ -211,7 +211,7 @@ def fit_var_h(Y, nC, nL, dfc=True):
     _, n1 = Y.shape
     X = np.ones((nC, n1))
     for p in range(1, nL+1):
-        X = np.row_stack((X, np.roll(Y, p)))    # np.roll without axis argument performs the operation on a flattened array, but the result is unaffected due to the drop of first nL observations
+        X = np.vstack((X, np.roll(Y, p)))    # np.roll without axis argument performs the operation on a flattened array, but the result is unaffected due to the drop of first nL observations
     Y, X = Y[:, nL:], X[:, nL:]
     if not use_numba:
         B, SE, V, U, S = ols_b_h(Y, X, dfc)
@@ -447,11 +447,11 @@ class ardlm(model):
         Y = y.reshape(1,-1)
 
         W = np.ones((nC,n1))
-        W = np.row_stack((W,Z))
+        W = np.vstack((W,Z))
         for l in range(1,nLy+1):
-            W = np.row_stack((W,np.roll(y,l, axis=1)))
+            W = np.vstack((W,np.roll(y,l, axis=1)))
         for l in range(1,nLx+1):
-            W = np.row_stack((W,np.roll(X,l, axis=1)))
+            W = np.vstack((W,np.roll(X,l, axis=1)))
 
         (nY,_), (nX,_), (nZ,_), (nW,_) = Y.shape, X.shape, Z.shape, W.shape
 
@@ -494,7 +494,7 @@ class ardlm(model):
         By = np.pad(By.reshape((nY,nLy)),((0,0),(0,nH-nLy+1)))
         Bx = np.pad(Bx.reshape((nX,nLx)),((0,0),(0,nH-nLx+1)))
 
-        Bx = np.column_stack((np.zeros((nX,1)),Bx))
+        Bx = np.hstack((np.zeros((nX,1)),Bx))
         for h in range(nH+1):
             for iX in range(nX):
                 Irf[iX,h] = Irf[iX,:h][::-1]@By[0,:h] + Bx[iX,h]
@@ -563,14 +563,14 @@ class nsm:
             b1l = np.array((1-np.exp(-lam*tau))/(lam*tau))
             b2l = np.array((1-np.exp(-lam*tau))/(lam*tau)-np.exp(-lam*tau))
             b3l = np.ones_like(tau)-np.array((1-np.exp(-lam*tau))/(lam*tau))
-        return np.column_stack((b1l,b2l,b3l))
+        return np.hstack((b1l,b2l,b3l))
 
     def olsproj(self,yin,Xin):
         y = yin.copy()
         X = Xin.copy()
         if len(y.shape) == 1:
             y = y[:,None]
-        yX = np.column_stack((y,X))
+        yX = np.hstack((y,X))
         yXnan = np.isnan(yX).any(axis=1)
         y[yXnan,:],X[yXnan,:] = 0,0
         b = np.linalg.solve(X.T@X,X.T@y)
@@ -630,7 +630,7 @@ class varms:
         Z = np.ones((1,n1))
 
         for p in range(1,1+nP):
-            Z = np.row_stack((Z,np.roll(data,p)))
+            Z = np.vstack((Z,np.roll(data,p)))
 
         Z = Z[:,nP:]
         Y = data[:,nP:]
@@ -681,7 +681,7 @@ class varms:
             A0inv = np.zeros((nK,nK))
             for v,ins in zip(idv,instrument.T):
 #                 print(np.cov(U,ins[-nT:].T))
-                A0inv[:,v] = np.cov(np.row_stack((ins[-nT:],U)))[0,1:]
+                A0inv[:,v] = np.cov(np.vstack((ins[-nT:],U)))[0,1:]
                 A0inv[:,v] = A0inv[:,v]/A0inv[v,v]
             self.model.irfs.iv = Psi@A0inv
             self.model.irfs.ivc = np.cumsum(Psi@A0inv,0)
@@ -701,7 +701,7 @@ def varols(data, nL):
     Z = np.ones((1, n1))
 
     for p in range(1, nL+1):
-        Z = np.row_stack((Z, np.roll(data, p)))    # np.roll without axis argument performs the operation on a flattened array, but the result is unaffected due to the drop of first nL observations
+        Z = np.vstack((Z, np.roll(data, p)))    # np.roll without axis argument performs the operation on a flattened array, but the result is unaffected due to the drop of first nL observations
 
     Z = C(Z[:, nL:])
     Y = C(data[:, nL:])
@@ -806,7 +806,7 @@ def get_A0inv(method=None,U=None,S=None,idv=None,M=None):
 #         A0inv = np.zeros((nY,nY))
         if method_ == 0:
             for v,m in zip(idv,M):
-                mU = np.row_stack((m,U))
+                mU = np.vstack((m,U))
                 mU_nan = np.isnan(mU)
                 mU = mU[:,~mU_nan.any(axis=0)]
                 if mU.shape[1] < 10:
@@ -819,7 +819,7 @@ def get_A0inv(method=None,U=None,S=None,idv=None,M=None):
                 method__ = 'regression'
 
                 if method__ == 'regression':
-                    X = np.row_stack((np.ones((1,mU.shape[1])),mU[0:1,:]))
+                    X = np.vstack((np.ones((1,mU.shape[1])),mU[0:1,:]))
                     Y = mU[1:,:]
                     beta1 = np.linalg.solve(X@X.T,X@Y.T)[1,:]
 
@@ -839,8 +839,8 @@ def get_A0inv(method=None,U=None,S=None,idv=None,M=None):
             not_idv = np.array([_ for _ in range(nY) if _ not in idv])
 
             # Reorder instrumented residuals first
-            U_ = np.row_stack((U[idv,:],U[not_idv,:]))
-            MU = np.row_stack((M,U_))
+            U_ = np.vstack((U[idv,:],U[not_idv,:]))
+            MU = np.vstack((M,U_))
             # Remove time periods with NaNs
             MU_nan = np.isnan(MU)
             MU = MU[:,~MU_nan.any(axis=0)]
@@ -871,7 +871,7 @@ def get_A0inv_njit(method=None,U=None,S=None,idv=None,M=None):
 #         A0inv = np.zeros((nY,nY))
         if method_ == 0:
             for v,m in zip(idv,M):
-                mU = np.row_stack((m,U))
+                mU = np.vstack((m,U))
                 mU_nan = np.isnan(mU)
                 mU = mU[:,~mU_nan.any(axis=0)]
                 if mU.shape[1] < 10:
@@ -885,7 +885,7 @@ def get_A0inv_njit(method=None,U=None,S=None,idv=None,M=None):
 
                 method__ = 'regression'
                 if method__ == 'regression':
-                    X = np.row_stack((np.ones((1,mU.shape[1])),mU[0:1,:]))
+                    X = np.vstack((np.ones((1,mU.shape[1])),mU[0:1,:]))
                     Y = mU[1:,:]
                     beta1 = np.linalg.solve(X@X.T,X@Y.T)[1,:]
                 if method__ == 'moments':
@@ -918,7 +918,7 @@ def get_A0inv_njit(method=None,U=None,S=None,idv=None,M=None):
             U_ = np.full_like(U,np.nan)
             for (iU_,iU) in enumerate([_ for _ in idv]+[_ for _ in not_idv]):
                 U_[iU_,:] = U[iU,:]
-            MU = np.row_stack((M,U_))
+            MU = np.vstack((M,U_))
             # Remove time periods with NaNs
             MU_nan = np.isnan(MU)
             MU = MU[:,~MU_nan.any(axis=0)]
@@ -1126,7 +1126,7 @@ def get_irfs(Y,c,B,U,S,/,*,nH,method=None,impulse=None,cl=None,ci=None,nR=1000,i
         IRC = np.full((nR,nH+1,nY,nY),np.nan)
         if method == 'ch':
             M = [0 for _ in range(nT)]
-        UM = np.row_stack((U,M))
+        UM = np.vstack((U,M))
         for r in range(nR):
             if (r+1) % 100 == 0:
                 print('\r Bootstrap {}/{}'.format(r+1,nR),end='\r',flush=True)
@@ -1302,7 +1302,7 @@ class VARm(model):
 
         # companion matrix
         BB = np.zeros((nL*nY, nL*nY))
-        BB[:nY, :] = np.column_stack(Bx)
+        BB[:nY, :] = np.hstack(Bx)
         BB[nY:, :-nY] = np.eye(nY*(nL-1))
 
         stable = np.all(np.abs(np.linalg.eigvals(BB)) < 1)
@@ -1699,22 +1699,22 @@ def lpols(Xdata=None,Ydata=None,Zdata=None,Wdata=None,nL=None,nH=None):
 
     Y = np.full((0,n1),np.nan)
     for h in range(0,nH+1):
-        Y = np.row_stack((Y,np.roll(Ydata,-h)))
+        Y = np.vstack((Y,np.roll(Ydata,-h)))
 
     X = np.asarray(Xdata)
     if Zdata is not None:
-        X = np.row_stack((X,Zdata))
+        X = np.vstack((X,Zdata))
 
     Z = np.ones((1,n1))
     for l in range(1,nK+1):
-        Z = np.row_stack((Z,np.roll(Xdata,l)))
+        Z = np.vstack((Z,np.roll(Xdata,l)))
     if Wdata is not None:
-        Z = np.row_stack((Z,Wdata))
+        Z = np.vstack((Z,Wdata))
 
     X = X[:,nK:n1-nH]
     Y = Y[:,nK:n1-nH]
     Z = Z[:,nK:n1-nH]
-
+    # print(X.shape)
     Mz = np.eye(nT) - Z.T@np.linalg.inv(Z@Z.T)@Z
     B = (Y@Mz@X.T)@np.linalg.inv(X@Mz@X.T)
     U = Y@Mz - B@X@Mz
@@ -1751,17 +1751,17 @@ def lpols_njit(Xdata=None,Ydata=None,Zdata=None,Wdata=None,nL=None,nH=None):
 
     Y = np.full((0,n1),np.nan)
     for h in range(0,nH+1):
-        Y = np.row_stack((Y,np.roll(Ydata,-h)))
+        Y = np.vstack((Y,np.roll(Ydata,-h)))
 
     X = np.asarray(Xdata)
     if Zdata is not None:
-        X = np.row_stack((X,Zdata))
+        X = np.vstack((X,Zdata))
 
     Z = np.ones((1,n1))
     for l in range(1,nK+1):
-        Z = np.row_stack((Z,np.roll(Xdata,l)))
+        Z = np.vstack((Z,np.roll(Xdata,l)))
     if Wdata is not None:
-        Z = np.row_stack((Z,Wdata))
+        Z = np.vstack((Z,Wdata))
 
     X = np.ascontiguousarray(X[:,nK:n1-nH])
     Y = np.ascontiguousarray(Y[:,nK:n1-nH])
@@ -1866,19 +1866,19 @@ class lpm:
 # #             X[idj] = data[offset-idj:offset+nT-idj,X_var_indices] #y[offset+1:offset:idh,:,:]
 # #         # Creating Z
 # #         for idj in range(1,nK):
-# #             Z[idj] = np.row_stack((np.ones((1,n0)),np.roll(data.T,p)))  X[] data[offset-idj:offset+nT-idj,X_var_indices] #y[offset+1:offset:idh,:,:]
+# #             Z[idj] = np.vstack((np.ones((1,n0)),np.roll(data.T,p)))  X[] data[offset-idj:offset+nT-idj,X_var_indices] #y[offset+1:offset:idh,:,:]
 
 
 
 #         Y = np.full((0,n0),np.nan)
 #         for h in range(1,nH+1):
-#             Y = np.row_stack((Y,np.roll(data[:,Y_var_indices].T,-h)))
+#             Y = np.vstack((Y,np.roll(data[:,Y_var_indices].T,-h)))
 
 #         X = data[:,X_var_indices].T
 
 #         Z = np.ones((1,n0))
 #         for l in range(1,nK+1):
-#             Z = np.row_stack((Z,np.roll(data[:,X_var_indices].T,l)))
+#             Z = np.vstack((Z,np.roll(data[:,X_var_indices].T,l)))
 
 # #         print(Y.shape,X.shape,Z.shape)
 
@@ -2204,7 +2204,7 @@ class FE_VARm:
         rows_new[rows_new>=E.shape[0]] -= E.shape[0]
         E = E[rows_new, columns]
 
-        E = np.column_stack((np.fliplr(E)[:, :nY*(nF+1)], np.full((E.shape[0], max(0, nY*(nF+1)-df_E.shape[1])), np.nan)))
+        E = np.hstack((np.fliplr(E)[:, :nY*(nF+1)], np.full((E.shape[0], max(0, nY*(nF+1)-df_E.shape[1])), np.nan)))
 
         df_E = pd.DataFrame(E, index=df_E.index, columns=['_e_'+var_name+f'_f{iF}' for iF in range(0, nF+1) for var_name in var_names[::-1]])
         df_E = df_E[['_e_'+var_name+f'_f{iF}' for iF in range(0, nF+1) for var_name in var_names]]
