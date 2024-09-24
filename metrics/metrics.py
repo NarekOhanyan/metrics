@@ -520,11 +520,11 @@ class ardlm(model):
 
     def do_data(self, Ydata, Xdata, Zdata):
 
-        def make_df(data):
-            if isinstance(data, np.ndarray) or isinstance(data, pd.Series):
-                data = pd.DataFrame(data)
-            assert data.shape[0] > data.shape[1], 'data must be in column format'
-            return data
+        def make_df(Data):
+            if isinstance(Data, np.ndarray) or isinstance(Data, pd.Series):
+                Data = pd.DataFrame(Data)
+            assert Data.shape[0] > Data.shape[1], 'data must be in column format'
+            return Data
 
         if Zdata is None:
             Zdata = np.full((Ydata.shape[0], 0), np.nan)
@@ -609,11 +609,11 @@ class nsm:
 # %% VAR model
 class varms:
 
-    def __init__(self, data, nP):
-        if data.shape[0] > data.shape[1]:
-            data = data.T
-        n0, n1 = data.shape
-        self.data = data
+    def __init__(self, Data, nP):
+        if Data.shape[0] > Data.shape[1]:
+            Data = Data.T
+        n0, n1 = Data.shape
+        self.Data = Data
         self.nP = nP
         self.n0 = n0
         self.n1 = n1
@@ -622,18 +622,18 @@ class varms:
         self.model.irfs = block()
 
     def fit(self):
-        data = self.data
-        _, n1 = data.shape
+        Data = self.Data
+        _, n1 = Data.shape
         nP = self.nP
         nK = self.nK
         nT = n1 - nP
         Z = np.ones((1, n1))
 
         for p in range(1, 1+nP):
-            Z = np.vstack((Z, np.roll(data, p)))
+            Z = np.vstack((Z, np.roll(Data, p)))
 
         Z = Z[:, nP:]
-        Y = data[:, nP:]
+        Y = Data[:, nP:]
 
         cB = (Y@Z.T)@(np.linalg.inv(Z@Z.T))
         c = cB[:, 0]
@@ -691,20 +691,20 @@ class varms:
             self.iv.ins_names = ins_names
 
 # %% VAR-OLS
-def varols(data, nL):
+def varols(Data, nL):
     """
     Function to estimate VAR(P) model with P = nL using OLS
     """
-    n0, n1 = data.shape
+    n0, n1 = Data.shape
     nT = n1 - nL
     nY = n0
     Z = np.ones((1, n1))
 
     for p in range(1, nL+1):
-        Z = np.vstack((Z, np.roll(data, p)))    # np.roll without axis argument performs the operation on a flattened array, but the result is unaffected due to the drop of first nL observations
+        Z = np.vstack((Z, np.roll(Data, p)))    # np.roll without axis argument performs the operation on a flattened array, but the result is unaffected due to the drop of first nL observations
 
     Z = C(Z[:, nL:])
-    Y = C(data[:, nL:])
+    Y = C(Data[:, nL:])
 
     cB = np.linalg.solve(Z@C(Z.T), Z@C(Y.T)).T
 
@@ -909,7 +909,6 @@ def get_A0inv_njit(method=None, U=None, S=None, idv=None, M=None):
                 in_idv = False
                 for _1 in idv:
                     if _ == _1:
-                        inn = False
                         break
                 if not in_idv:
                     not_idv.append(_)
@@ -1092,13 +1091,13 @@ def get_bs(Y, c, B, U, S, UM, nL, nY, nH, nT, /, *, method=None, impulse=None, c
     M_r = UM_r[nY:, :]
     if not use_numba:
         Y_r = varsim(c, B, U_r, Y0_r)
-        c_r_, B_r_, U_r_, S_r_ = varols(Y_r, nL)
+        _, B_r_, U_r_, S_r_ = varols(Y_r, nL)
         Psi_ = get_Psi_from_Bx(B_r_, nH)
         A0inv_ = get_A0inv(method=method, U=U_r_, S=S_r_, idv=idv, M=M_r)
         ir_, irc_ = get_sirf_from_irf(Psi_, A0inv_, impulse)
     else:
         Y_r = varsim_njit(c, B, U_r, Y0_r)
-        c_r_, B_r_, U_r_, S_r_ = varols_njit(Y_r, nL)
+        _, B_r_, U_r_, S_r_ = varols_njit(Y_r, nL)
         Psi_ = get_Psi_from_Bx_njit(B_r_, nH)
         A0inv_ = get_A0inv(method=method, U=U_r_, S=S_r_, idv=idv, M=M_r)
         ir_, irc_ = get_sirf_from_irf_njit(Psi_, A0inv_, impulse)
@@ -1129,7 +1128,7 @@ def get_irfs(Y, c, B, U, S, /, *, nH, method=None, impulse=None, cl=None, ci=Non
         UM = np.vstack((U, M))
         for r in range(nR):
             if (r+1) % 100 == 0:
-                print('\r Bootstrap {}/{}'.format(r+1, nR), end='\r', flush=True)
+                print(f'\r Bootstrap {r+1}/{nR}', end='\r', flush=True)
             ir_, irc_ = get_bs(Y, c, B, U, S, UM, nL, nY, nH, nT, method=method, impulse=impulse, cl=cl, ci=ci, idv=idv, M=M)
 #             ir_, irc_ = bs_njit(Y, c,B, U, S, UM, nL, nY, nH, nT, method=method, impulse=impulse, cl=cl, ci=ci, idv=idv, M=M)
             IR[r], IRC[r] = ir_, irc_
@@ -1427,22 +1426,21 @@ class varm:
 
     # ==============================================================================================
 
-    def __init__(self, data,/,*, nL=None, var_names=None, sample=None):
+    def __init__(self, Data,/,*, nL=None, var_names=None, sample=None):
 
-        if data.shape[0] < data.shape[1]:
-            data = data.T
+        if Data.shape[0] < Data.shape[1]:
+            Data = Data.T
 
-        if isinstance(data, pd.DataFrame):
+        if isinstance(Data, pd.DataFrame):
             pass
-        elif isinstance(data,(pd.Series, np.ndarray)):
-            data = pd.DataFrame(data)
-            data.columns = [str(i) for i in data.columns]
+        elif isinstance(Data,(pd.Series, np.ndarray)):
+            Data = pd.DataFrame(Data)
+            Data.columns = [str(i) for i in Data.columns]
 
         if var_names is None:
-            var_names = data.columns
+            var_names = Data.columns
 
-        n0, n1 = data.shape
-        self.data = data
+        self.Data = Data
         self.model = block()
         self.model.spec = block()
         self.model.spec.var_names = var_names
@@ -1459,12 +1457,11 @@ class varm:
     def fit(self):
         isample = self.model.spec.isample
         nL = self.model.spec.nL
-        nY = self.model.spec.nY
         var_names = self.model.spec.var_names
-        data = self.data[var_names].iloc[isample[0]-nL:isample[1]+1, :].values
+        Data = self.Data[var_names].iloc[isample[0]-nL:isample[1]+1, :].values
 
-#         c, B, U, S = varols(data.T, nL)
-        c, B, U, S = varols_njit(data.T, nL)
+#         c, B, U, S = varols(Data.T, nL)
+        c, B, U, S = varols_njit(Data.T, nL)
 
         self.model.parameters = block()
         self.model.parameters.c = c
@@ -1516,7 +1513,6 @@ class varm:
         self.model.irfs.spec.nH = nH
         self.model.irfs.spec.impulse = impulse
 
-        nT = self.model.spec.nT
         nL = self.model.spec.nL
         nY = self.model.spec.nY
         c = self.model.parameters.c
@@ -1525,8 +1521,8 @@ class varm:
         U = self.model.residuals.rd.T
         isample = self.model.spec.isample
         var_names = self.model.spec.var_names
-        data = self.data[var_names].iloc[isample[0]-nL:isample[1]+1, :].values
-        Y = data.T
+        Data = self.Data[var_names].iloc[isample[0]-nL:isample[1]+1, :].values
+        Y = Data.T
 
         if isinstance(cl, float):
             cl = [cl]
@@ -1560,9 +1556,8 @@ class varm:
             if len(idv) != len(ins_names):
                 raise SyntaxError('The number of instruments must be equal the number of instrumented variables')
 
-            instruments = self.data[ins_names].iloc[isample[0]:isample[1]+1, :].values
+            instruments = self.Data[ins_names].iloc[isample[0]:isample[1]+1, :].values
             M = instruments.T
-            (nM,_) = M.shape
 
         if method in ('ch', 'iv'):
             ir, irc, Psi, A0inv = get_irfs(Y, c,B, U, S, nH=nH, method=method, impulse=impulse, cl=cl, ci=ci, nR=nR, idv=idv, M=M)
@@ -1598,8 +1593,8 @@ class varm:
     def set_sample(self, sample=None):
 
         var_names = self.model.spec.var_names
-        data = self.data[var_names].values
-        datarownan = np.isnan(data).any(axis=1)
+        Data = self.Data[var_names].values
+        datarownan = np.isnan(Data).any(axis=1)
         if not datarownan.any():
             nanoffset = [0, 0]
         else:
@@ -1608,19 +1603,19 @@ class varm:
                 if datarownan[0]:
                     nanoffset = [datarownanchange[0, 0], 0]
                 else:
-                    nanoffset = [0, data.shape[0]-datarownanchange[0, 0]]
+                    nanoffset = [0, Data.shape[0]-datarownanchange[0, 0]]
             elif datarownanchange.shape[0] == 2:
-                nanoffset = [datarownanchange[0, 0], data.shape[0]-datarownanchange[1, 0]]
+                nanoffset = [datarownanchange[0, 0], Data.shape[0]-datarownanchange[1, 0]]
             elif datarownanchange.shape[0] > 2:
                 raise ValueError('Sample should not contain NaNs')
 
         nL = self.model.spec.nL
         if sample is None:
-            isample = (nL+nanoffset[0], self.data.shape[0]-1-nanoffset[1])
+            isample = (nL+nanoffset[0], self.Data.shape[0]-1-nanoffset[1])
         else:
             try:
-                isample = (max(self.data.index.get_loc(sample[0]), nL+nanoffset[0]), min(self.data.index.get_loc(sample[1]), self.data.shape[0]-1-nanoffset[1]))
-                sample = (self.data.index[isample[0]].strftime('%Y-%m-%d'), self.data.index[isample[1]].strftime('%Y-%m-%d'))
+                isample = (max(self.Data.index.get_loc(sample[0]), nL+nanoffset[0]), min(self.Data.index.get_loc(sample[1]), self.Data.shape[0]-1-nanoffset[1]))
+                sample = (self.Data.index[isample[0]].strftime('%Y-%m-%d'), self.Data.index[isample[1]].strftime('%Y-%m-%d'))
             except KeyError:
                 raise KeyError('Provided sample is outside of the available data range')
 
@@ -1795,24 +1790,23 @@ class lpm:
 
     # ==============================================================================================
 
-    def __init__(self, data, /, *, nL=None, nH=None, Y_var_names=None, X_var_names=None, sample=None):
+    def __init__(self, Data, /, *, nL=None, nH=None, Y_var_names=None, X_var_names=None, sample=None):
 
-        if data.shape[0] < data.shape[1]:
-            data = data.T
+        if Data.shape[0] < Data.shape[1]:
+            Data = Data.T
 
-        if isinstance(data, pd.DataFrame):
+        if isinstance(Data, pd.DataFrame):
             pass
-        elif isinstance(data,(pd.Series, np.ndarray)):
-            data = pd.DataFrame(data)
-            data.columns = [str(i) for i in data.columns]
+        elif isinstance(Data,(pd.Series, np.ndarray)):
+            Data = pd.DataFrame(Data)
+            Data.columns = [str(i) for i in Data.columns]
 
         if Y_var_names is None:
-            Y_var_names = data.columns.tolist()
+            Y_var_names = Data.columns.tolist()
         if X_var_names is None:
-            X_var_names = data.columns.tolist()
+            X_var_names = Data.columns.tolist()
 
-        n0, n1 = data.shape
-        self.data = data
+        self.Data = Data
         self.model = block()
         self.model.spec = block()
         self.model.spec.Y_var_names = Y_var_names
@@ -1834,18 +1828,14 @@ class lpm:
         isample = self.model.spec.isample
         nL = self.model.spec.nL
         nH = self.model.spec.nH
-        nY = self.model.spec.nY
-        nX = self.model.spec.nX
         Y_var_names = self.model.spec.Y_var_names
         X_var_names = self.model.spec.X_var_names
         var_names = self.model.spec.var_names
-        Y_var_indices = [i for i, name in enumerate(self.data.columns) if name in Y_var_names]
-        X_var_indices = [i for i, name in enumerate(self.data.columns) if name in X_var_names]
-        data = self.data[var_names].iloc[isample[0]-nL:isample[1]+nH, :].values
-        n0, n1 = data.shape
-        nK = nL - 1
+        Y_var_indices = [i for i, name in enumerate(self.Data.columns) if name in Y_var_names]
+        X_var_indices = [i for i, name in enumerate(self.Data.columns) if name in X_var_names]
+        Data = self.Data[var_names].iloc[isample[0]-nL:isample[1]+nH, :].values
 
-        B, U, S = lpols_njit(Xdata=data[:, X_var_indices].T, Ydata=data[:, Y_var_indices].T, nL=nL, nH=nH)
+        B, U, S = lpols_njit(Xdata=Data[:, X_var_indices].T, Ydata=Data[:, Y_var_indices].T, nL=nL, nH=nH)
 
 # #         offset = nK
 
@@ -1923,10 +1913,7 @@ class lpm:
         self.model.irfs.spec.impulse = impulse
         self.model.irfs.spec.nH = self.model.spec.nH
 
-        nT = self.model.spec.nT
-        nL = self.model.spec.nL
-        nX = self.model.spec.nX
-        nH = self.model.spec.nH
+        nY = self.model.spec.nY
         B = self.model.parameters.B
         S = self.model.parameters.S
         U = self.model.residuals.rd
@@ -1960,9 +1947,8 @@ class lpm:
             if len(idv) != len(ins_names):
                 raise SyntaxError('The number of instruments must be equal the number of instrumented variables')
 
-            instruments = self.data[ins_names].iloc[isample[0]:isample[1]+1, :].values
+            instruments = self.Data[ins_names].iloc[isample[0]:isample[1]+1, :].values
             M = instruments.T
-            nM, _ = M.shape
 
         if method in ('ch', 'iv'):
             ir, irc, Psi, A0inv = get_lp_irfs(B, U, S, method=method, impulse=impulse, idv=idv, M=M)
@@ -1992,8 +1978,8 @@ class lpm:
     def set_sample(self, sample=None):
 
         var_names = self.model.spec.var_names
-        data = self.data[var_names].values
-        datarownan = np.isnan(data).any(axis=1)
+        Data = self.Data[var_names].values
+        datarownan = np.isnan(Data).any(axis=1)
         if not datarownan.any():
             nanoffset = [0, 0]
         else:
@@ -2002,19 +1988,19 @@ class lpm:
                 if datarownan[0]:
                     nanoffset = [datarownanchange[0, 0], 0]
                 else:
-                    nanoffset = [0, data.shape[0]-datarownanchange[0, 0]]
+                    nanoffset = [0, Data.shape[0]-datarownanchange[0, 0]]
             elif datarownanchange.shape[0] == 2:
-                nanoffset = [datarownanchange[0, 0], data.shape[0]-datarownanchange[1, 0]]
+                nanoffset = [datarownanchange[0, 0], Data.shape[0]-datarownanchange[1, 0]]
             elif datarownanchange.shape[0] > 2:
                 raise ValueError('Sample should not contain NaNs')
 
         nL = self.model.spec.nL
         nH = self.model.spec.nH
         if sample is None:
-            isample = (nL+nanoffset[0], self.data.shape[0]-nH-nanoffset[1])
+            isample = (nL+nanoffset[0], self.Data.shape[0]-nH-nanoffset[1])
         else:
-            isample = (max(self.data.index.get_loc(sample[0]), nL+nanoffset[0]), min(self.data.index.get_loc(sample[1]), self.data.shape[0]-nH-nanoffset[1]))
-            sample = (self.data.index[isample[0]].strftime('%Y-%m-%d'), self.data.index[isample[1]].strftime('%Y-%m-%d'))
+            isample = (max(self.Data.index.get_loc(sample[0]), nL+nanoffset[0]), min(self.Data.index.get_loc(sample[1]), self.Data.shape[0]-nH-nanoffset[1]))
+            sample = (self.Data.index[isample[0]].strftime('%Y-%m-%d'), self.Data.index[isample[1]].strftime('%Y-%m-%d'))
 
 
 #         sample = (self.data.index[isample[0]], self.data.index[isample[1]])
@@ -2051,31 +2037,30 @@ class lpm:
 # ### SFM
 
 class sfm:
-    def __init__(self, data, tcodes, nF=None, make_fig=False):
+    def __init__(self, Data, tcodes, nF=None, make_fig=False):
 
-        if isinstance(data, pd.DataFrame):
-            Data = data
-        elif isinstance(data,(pd.Series, np.ndarray)):
-            Data = pd.DataFrame(data)
+        if isinstance(Data, pd.DataFrame):
+            pass
+        elif isinstance(Data,(pd.Series, np.ndarray)):
+            Data = pd.DataFrame(Data)
 
-        data = Data.values
+        Data = Data.values
 
         self.Data = Data
         self.tcodes = tcodes
 
-        Datatrans = self.transform_by_tcode(data, tcodes)
-        DataTrans = pd.DataFrame(Datatrans, columns=data.columns, index=data.index)
+        Datatrans = self.transform_by_tcode(Data, tcodes)
+        DataTrans = pd.DataFrame(Datatrans, columns=Data.columns, index=Data.index)
         X = Datatrans[2:, :]
 
         Xcolnan = np.isnan(X).any(axis=0)
         X_nonan = X[:, ~Xcolnan]
-        tcodes_nonan = tcodes[~Xcolnan]
 
         X_S, X_Mu, X_StD = self.standardize(X_nonan)
         fac, lam = self.getFactors(X_S, nF, make_fig)
 
-        Factors = pd.DataFrame(fac, columns=[('Factor_'+str(f)) for f in range(1, fac.shape[1]+1)], index=data.index[2:])
-        Lambda = pd.DataFrame(lam, columns=data.columns[~Xcolnan], index=range(fac.shape[1]))
+        Factors = pd.DataFrame(fac, columns=[('Factor_'+str(f)) for f in range(1, fac.shape[1]+1)], index=Data.index[2:])
+        Lambda = pd.DataFrame(lam, columns=Data.columns[~Xcolnan], index=range(fac.shape[1]))
 
         self.DataTrans = DataTrans
         self.X = X_nonan
@@ -2086,14 +2071,13 @@ class sfm:
         self.Lambda = Lambda
         self.F = fac
         self.L = lam
-        self.nT = data.shape[0]
-        self.nN = data.shape[1]
+        self.nT = Data.shape[0]
+        self.nN = Data.shape[1]
         self.nF = fac.shape[1]
 
     def transform_by_tcode(self, rawdata, tcodes):
         def transxf(xin, tcode):
             x = xin.copy()
-            nT = len(x)
             y = np.full_like(x, np.nan)
             if tcode == 1:
                 y = x
@@ -2142,7 +2126,7 @@ class sfm:
                 IC[r-1] = np.log(V[r-1]) + r*(nN+nT)/(nN*nT)*np.log(min(nN, nT))
 
             if make_fig:
-                fig, axes = mpl.subplots(1, 2, figsize=(12, 4))
+                _, axes = mpl.subplots(1, 2, figsize=(12, 4))
                 axes[0].plot(range(1, r_max+1), IC, '-o')
                 axes[0].set_xticks(range(1, r_max+1))
                 axes[0].set_xlim((0, r_max+1))
