@@ -1668,99 +1668,26 @@ class varm:
 # ### LP-OLS
 
 # %% lpols
-def lpols(Xdata=None, Ydata=None, Zdata=None, Wdata=None, nL=None, nH=None):
+def lpols(Ydata, Xdata=None, Zdata=None, Wdata=None, nL=1, nH=0):
     """
     Function to estimate LP(nL, nH) model using OLS
     """
-    if Xdata is None and Ydata is None:
-        raise ValueError('No data provided')
-    else:
-        if Xdata is None:
-            Xdata = Ydata
-        if Ydata is None:
-            Ydata = Xdata
-    if Zdata is not None:
-        n0, n1 = Zdata.shape
-        nZ = n0
-    else:
-        nZ = 0
 
-    n0, n1 = Ydata.shape
-    nY = n0
-    n0, n1 = Xdata.shape
+    if Xdata is None: Xdata = Ydata
+    if Zdata is None: Zdata = np.full((0, Ydata.shape[1]), np.nan)
+    if Wdata is None: Wdata = np.full((0, Ydata.shape[1]), np.nan)
+
+    nY, n1 = Ydata.shape
+    nX, _ = Xdata.shape
+    nZ, _ = Zdata.shape
     nT = n1 - nL - nH + 1
-    nX = n0
     nK = nL - 1
 
-    Y = np.full((0, n1), np.nan)
-    for h in range(0, nH+1):
-        Y = np.vstack((Y, np.roll(Ydata, -h)))
+    Y = np.vstack([np.roll(Ydata, -h) for h in range(0, nH+1)])
+    X = np.vstack([Xdata, Zdata])
+    Z = np.vstack([np.ones((1, n1))]+[np.roll(Xdata, l) for l in range(1, nK+1)]+[Wdata])
 
-    X = np.asarray(Xdata)
-    if Zdata is not None:
-        X = np.vstack((X, Zdata))
-
-    Z = np.ones((1, n1))
-    for l in range(1, nK+1):
-        Z = np.vstack((Z, np.roll(Xdata, l)))
-    if Wdata is not None:
-        Z = np.vstack((Z, Wdata))
-
-    X = X[:, nK:n1-nH]
-    Y = Y[:, nK:n1-nH]
-    Z = Z[:, nK:n1-nH]
-
-    Mz = np.eye(nT) - Z.T@np.linalg.inv(Z@Z.T)@Z
-    B = (Y@Mz@X.T)@np.linalg.inv(X@Mz@X.T)
-    U = Y@Mz - B@X@Mz
-    U = U.reshape((nH+1, nY, nT))
-    B = B.T.reshape((nX+nZ, nH+1, nY)).transpose((1, 2, 0)) #.swapaxes(1, 2)
-    S = (1/nT)*(U[1]@U[1].T)
-    return B, U, S
-
-
-@nb.njit
-def lpols_njit(Xdata=None, Ydata=None, Zdata=None, Wdata=None, nL=None, nH=None):
-    """
-    Function to estimate LP(nL, nH) model using OLS
-    """
-    if Xdata is None and Ydata is None:
-        raise ValueError('No data provided')
-    else:
-        if Xdata is None:
-            Xdata = Ydata
-        if Ydata is None:
-            Ydata = Xdata
-    if Zdata is not None:
-        n0, n1 = Zdata.shape
-        nZ = n0
-    else:
-        nZ = 0
-
-    n0, n1 = Ydata.shape
-    nY = n0
-    n0, n1 = Xdata.shape
-    nT = n1 - nL - nH + 1
-    nX = n0
-    nK = nL - 1
-
-    Y = np.full((0, n1), np.nan)
-    for h in range(0, nH+1):
-        Y = np.vstack((Y, np.roll(Ydata, -h)))
-
-    X = np.asarray(Xdata)
-    if Zdata is not None:
-        X = np.vstack((X, Zdata))
-
-    Z = np.ones((1, n1))
-    for l in range(1, nK+1):
-        Z = np.vstack((Z, np.roll(Xdata, l)))
-    if Wdata is not None:
-        Z = np.vstack((Z, Wdata))
-
-    X = np.ascontiguousarray(X[:, nK:n1-nH])
-    Y = np.ascontiguousarray(Y[:, nK:n1-nH])
-    Z = np.ascontiguousarray(Z[:, nK:n1-nH])
+    X, Y, Z = C(X[:, nK:n1-nH]), C(Y[:, nK:n1-nH]), C(Z[:, nK:n1-nH])
 
     Mz = np.eye(nT) - Z.T@np.linalg.inv(Z@Z.T)@Z
     B = np.linalg.solve(X@Mz@X.T, X@Mz@Y.T).T
@@ -1770,6 +1697,44 @@ def lpols_njit(Xdata=None, Ydata=None, Zdata=None, Wdata=None, nL=None, nH=None)
     S = (1/nT)*(U[1]@U[1].T)
     return B, U, S
 
+# %% lpols
+
+@nb.njit
+def lpols_njit(Ydata, Xdata=None, Zdata=None, Wdata=None, nL=1, nH=0):
+    """
+    Function to estimate LP(nL, nH) model using OLS
+    """
+
+    if Xdata is None: Xdata = Ydata
+
+    nY, n1 = Ydata.shape
+    nX, _ = Xdata.shape
+    nZ = 0 if Zdata is None else Zdata.shape[0]
+    nT = n1 - nL - nH + 1
+    nK = nL - 1
+
+    Y = np.full((0, n1), np.nan)
+    for h in range(0, nH+1): Y = np.vstack((Y, np.roll(Ydata, -h)))
+
+    X = np.asarray(Xdata)
+    if Zdata is not None: X = np.vstack((X, Zdata))
+
+    Z = np.ones((1, n1))
+    for l in range(1, nK+1): Z = np.vstack((Z, np.roll(Xdata, l)))
+    if Wdata is not None: Z = np.vstack((Z, Wdata))
+
+    X, Y, Z = C(X[:, nK:n1-nH]), C(Y[:, nK:n1-nH]), C(Z[:, nK:n1-nH])
+
+    Mz = np.eye(nT) - Z.T@np.linalg.inv(Z@Z.T)@Z
+    B = np.linalg.solve(X@Mz@X.T, X@Mz@Y.T).T
+    U = Y@Mz - B@X@Mz
+    U = U.reshape((nH+1, nY, nT))
+    B = B.T.reshape((nX+nZ, nH+1, nY)).transpose((1, 2, 0)) #.swapaxes(1, 2)
+    S = (1/nT)*(U[1]@U[1].T)
+    return B, U, S
+
+
+# %%
 
 def get_lp_irfs(B, U, S, /, *, method=None, impulse=None, idv=None, M=None):
     _, _, nX = B.shape
@@ -1835,7 +1800,7 @@ class lpm:
         X_var_indices = [i for i, name in enumerate(self.Data.columns) if name in X_var_names]
         Data = self.Data[var_names].iloc[isample[0]-nL:isample[1]+nH, :].values
 
-        B, U, S = lpols_njit(Xdata=Data[:, X_var_indices].T, Ydata=Data[:, Y_var_indices].T, nL=nL, nH=nH)
+        B, U, S = lpols_njit(Ydata=Data[:, Y_var_indices].T, Xdata=Data[:, X_var_indices].T, nL=nL, nH=nH)
 
 # #         offset = nK
 
