@@ -269,12 +269,11 @@ def get_irfs_ARDLm(By, Bx, /, *, model_spec, irf_spec):
 
     Irf = np.full((nX, nH+1), np.nan)
 
-    By = np.pad(By.reshape((nY, nLy)), ((0, 0), (0, max(nH-nLy+1, 0))))
-    Bx = np.pad(Bx.reshape((nX, nI+nLx)), ((0, 0), (1-nI, max(nH-nI-nLx+1, 0))))
+    By = np.pad(By.T.reshape((nY, nLy)), ((0, 0), (0, max(nH-nLy+1, 0))))
+    Bx = np.pad(Bx.T.reshape((nX, nI+nLx)), ((0, 0), (1-nI, max(nH-nI-nLx+1, 0))))
 
     for h in range(nH+1):
-        for iX in range(nX):
-            Irf[iX, h] = Irf[iX, :h][::-1]@By[0, :h] + Bx[iX, h]
+        Irf[:, h] = Irf[:, :h][:, ::-1]@By[0, :h] + Bx[:, h]
 
     return Irf, np.cumsum(Irf, axis=1)
 
@@ -303,7 +302,7 @@ def get_irfs_std_ARDLm(B, V, /, *, model_spec, irf_spec):
 
 class ARDLm(model):
 
-    def __init__(self, Data, /, *, Y_var, X_vars, Z_vars=None, sample=None, add_constant=True, contemporaneous_impact=True, nLy=None, nLx=None, dfc=True):
+    def __init__(self, Data, /, *, Y_var, X_vars, Z_vars=None, sample=None, add_constant=True, contemporaneous_impact=True, nLy=None, nLx=None, dfc=True, irf_spec=None):
         super().__init__()
 
         if not isinstance(Data, pd.core.frame.DataFrame):
@@ -318,7 +317,7 @@ class ARDLm(model):
         self.Irfs = None
         self.Forecasts = None
 
-        self.set_sample(Y_var, X_vars, Z_vars, sample, nC, nI, nLy, nLx, dfc)
+        self.set_sample(Y_var, X_vars, Z_vars, sample, nC, nI, nLy, nLx, dfc, irf_spec)
 
     def fit(self):
 
@@ -365,7 +364,7 @@ class ARDLm(model):
 
         return self
 
-    def set_sample(self, Y_var, X_vars, Z_vars, sample, nC, nI, nLy, nLx, dfc):
+    def set_sample(self, Y_var, X_vars, Z_vars, sample, nC, nI, nLy, nLx, dfc, irf_spec):
 
         Ydata, Xdata, Zdata = self.Data.Ydata, self.Data.Xdata, self.Data.Zdata
 
@@ -388,7 +387,7 @@ class ARDLm(model):
         self.__Default_Spec = {**self.Spec}
 
         self.fit()
-        self.irf()
+        self.irf(**irf_spec if irf_spec else {})
 
         return self
 

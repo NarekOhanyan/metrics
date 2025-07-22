@@ -95,16 +95,15 @@ class test_ARDLm_vs_ardlm(unittest.TestCase):
         """
 
         try:
-            Mdl = metrics.ARDLm(df_Ydata, Y_var=0, X_vars=[1, 2], nLy=2, nLx=3, contemporaneous_impact=False).irf()
+            Mdl = metrics.ARDLm(df_Ydata, Y_var=0, X_vars=[1, 2], nLy=2, nLx=3, contemporaneous_impact=False)
             Mdl1 = metrics.ardlm(df_Ydata[0], df_Ydata[[1, 2]], nLy=2, nLx=3)
-            Mdl1.irf(nH=12, nR=100)
 
             # print(Mdl1.Est.Bc, np.squeeze(Mdl.Est['Bc']))
-            print(Mdl1.Est.By, np.squeeze(Mdl.Est['By']))
+            # print(Mdl1.Est.By, np.squeeze(Mdl.Est['By']))
             assert (abs(Mdl1.Est.Bc - np.squeeze(Mdl.Est['Bc'])) < 1e-10).all(), "\nTest 1 failed"
             assert (abs(Mdl1.Est.By.T - np.squeeze(Mdl.Est['By'])) < 1e-10).all(), "\nTest 2 failed"
             assert (abs(Mdl1.Est.Bx.T - np.squeeze(Mdl.Est['Bx'])) < 1e-10).all(), "\nTest 3 failed"
-            assert (abs(Mdl1.Irfs.Irf[0] - Mdl1.Irfs.Irf[0]) < 1e-10).all(), "\nTest 4 failed"
+            assert (abs(Mdl1.Irfs.Irf[0] - Mdl.Irfs.Irf_m[0]) < 1e-10).all(), "\nTest 4 failed"
         except AssertionError:
             print('Test Failed')
             raise
