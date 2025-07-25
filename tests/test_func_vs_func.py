@@ -10,7 +10,7 @@ import datetime as dt
 # import statsmodels.api as sm
 # import statsmodels.formula.api as smf
 sys.path.append('../')
-import metrics
+import metrics.metrics as m
 
 # Tests
 
@@ -43,10 +43,10 @@ class test_fit_var_h_vs_varols(unittest.TestCase):
         """
 
         try:
-            B1, _, _, U1, S1 = metrics.fit_var_h(Y, nC, nL)
-            c2, Bx2, U2, S2 = metrics.varols(Y, nL=nL)
+            B1, _, _, U1, S1 = m.fit_var_h(Y, nC, nL)
+            c2, Bx2, U2, S2 = m.varols(Y, nL=nL)
 
-            c1, Bx1 = metrics.split_C_B(B1, nC, nL, nY)
+            c1, Bx1 = m.split_C_B(B1, nC, nL, nY)
             c1 = np.squeeze(c1)
 
             assert (abs(Bx2 - Bx1) < 1e-10).all(), "\nTest 1 failed"
@@ -70,8 +70,8 @@ class test_VARm_vs_varm(unittest.TestCase):
         """
 
         try:
-            Mdl = metrics.VARm(df_Ydata).irf(ci='wbs')
-            Mdl1 = metrics.varm(df_Ydata, nL=1)
+            Mdl = m.VARm(df_Ydata).irf(ci='wbs')
+            Mdl1 = m.varm(df_Ydata, nL=1)
             Mdl1.irf(method='ch', nH=12, ci='wbs')
 
             assert (abs(Mdl1.model.parameters.c - np.squeeze(Mdl.Est['Bc'])) < 1e-10).all(), "\nTest 1 failed"
@@ -95,8 +95,8 @@ class test_ARDLm_vs_ardlm(unittest.TestCase):
         """
 
         try:
-            Mdl = metrics.ARDLm(df_Ydata, Y_var=0, X_vars=[1, 2], nLy=2, nLx=3, contemporaneous_impact=False)
-            Mdl1 = metrics.ardlm(df_Ydata[0], df_Ydata[[1, 2]], nLy=2, nLx=3)
+            Mdl = m.ARDLm(df_Ydata, Y_var=0, X_vars=[1, 2], nLy=2, nLx=3, contemporaneous_impact=False)
+            Mdl1 = m.ardlm(df_Ydata[0], df_Ydata[[1, 2]], nLy=2, nLx=3)
 
             # print(Mdl1.Est.Bc, np.squeeze(Mdl.Est['Bc']))
             # print(Mdl1.Est.By, np.squeeze(Mdl.Est['By']))

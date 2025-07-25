@@ -5,6 +5,7 @@ import pandas as pd
 import datetime as dt
 import scipy.stats as spstats
 import matplotlib.pyplot as mpl
+import warnings
 
 use_numba = True
 
@@ -431,6 +432,8 @@ class ardlm(model):
 
         self.fit()
         self.irf(nH, nR)
+
+        warnings.warn('ardlm is deprecated, use ARDLm instead')
 
     def fit(self):
 
@@ -1450,6 +1453,8 @@ class varm:
         self.model.irfs.spec = block()
 
         self.set_sample(sample)
+
+        warnings.warn('varm is deprecated. Use VARm instead.')
 
     # ==============================================================================================
 
