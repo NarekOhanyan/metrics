@@ -1,0 +1,11 @@
+   # pyproject.toml
+   [project]
+   name = "metrics"
+   version = "0.0.0"
+   description = "An Econometrics package for Python"
+   requires-python = ">=3.8"
+   dependencies = ['numpy', 'numba', 'pandas', 'scipy', 'matplotlib']
+
+   [build-system]
+   requires = ["setuptools>=61.0"]
+   build-backend = "setuptools.build_meta"

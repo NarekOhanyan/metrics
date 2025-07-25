@@ -10,7 +10,7 @@ import datetime as dt
 import statsmodels.api as sm
 # import statsmodels.formula.api as smf
 sys.path.append('../')
-import metrics
+import metrics.metrics as m
 
 # Tests
 
@@ -43,8 +43,8 @@ class test_lpm_vs_sm_OLS(unittest.TestCase):
         """
 
         try:
-            LPM = metrics.lpm(data, nL=nL, nH=nH, Y_var_names=["0", "1", "2"])
-            # B,U,S = metrics.lpols(X,Y,nL,nH)
+            LPM = m.lpm(data, nL=nL, nH=nH, Y_var_names=["0", "1", "2"])
+            # B,U,S = m.lpols(X,Y,nL,nH)
             B = LPM.model.parameters.B
 
             nX = X.shape[0]
