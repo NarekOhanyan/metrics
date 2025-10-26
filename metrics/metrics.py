@@ -2164,7 +2164,8 @@ class FE_VARm:
 
         RMSFE = pd.DataFrame([df_E.map(np.square).apply(np.mean).apply(np.sqrt)[[c for c in df_E.columns if varname in c]].values for varname in var_names], index=var_names, columns=range(0, nF+1))
 
-        STD = df.loc[period[0]:period[1], var_names].std()
+        sample_STD = (df-df.loc[sample[0]:sample[1]].mean()).loc[sample[0]:sample[1]].map(np.square).apply(np.mean).apply(np.sqrt)
+        period_STD = (df-df.loc[sample[0]:sample[1]].mean()).loc[period[0]:period[1]].map(np.square).apply(np.mean).apply(np.sqrt)
 
         self.var_names = var_names
         self.sample = sample
@@ -2174,6 +2175,7 @@ class FE_VARm:
         self.df_F = df_F
         self.df_E = df_E
         self.RMSFE = RMSFE
-        self.STD = STD
+        self.sample_STD = sample_STD
+        self.period_STD = period_STD
 
 # %%
