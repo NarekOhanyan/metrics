@@ -129,11 +129,12 @@ def ols_h(y, X, dfc=True):
     """
     y, X, Xt = C(y), C(X), C(X.T)
     nX, nN = X.shape
-    b = (y@Xt)@np.linalg.inv(X@Xt)
+    invX = np.linalg.inv(X@Xt)
+    b = (y@Xt)@invX
     e = y-b@X
     df = nN-nX if dfc else nN
     S = (1/df)*(e@e.T)
-    V = S*np.linalg.inv(X@Xt)
+    V = S*invX
     se = np.sqrt(np.diag(V)).reshape(b.shape)
     return b, se, V, e, S
 
@@ -209,11 +210,13 @@ def fit_var_h(Y, nC, nL, dfc=True):
     """
     Function to estimate VAR(P) model with P = nL using OLS
     """
-    _, n1 = Y.shape
-    X = np.ones((nC, n1))
-    for p in range(1, nL+1):
-        X = np.vstack((X, np.roll(Y, p)))    # np.roll without axis argument performs the operation on a flattened array, but the result is unaffected due to the drop of first nL observations
-    Y, X = Y[:, nL:], X[:, nL:]
+    nY, nN = Y.shape
+    # X = np.ones((nC, n1))
+    # for p in range(1, nL+1):
+    #     X = np.vstack((X, np.roll(Y, p)))    # np.roll without axis argument performs the operation on a flattened array, but the result is unaffected due to the drop of first nL observations
+    # X = X[:, nL:]
+    X = np.vstack((np.ones((nC, nN-nL)), C(np.lib.stride_tricks.sliding_window_view(Y, nN-nL, axis=1).transpose(1, 0, 2)[::-1]).reshape(nY*(nL+1), -1)[nY:]))
+    Y = Y[:, nL:]
     if not use_numba:
         B, SE, V, U, S = ols_b_h(Y, X, dfc)
     else:
@@ -1672,71 +1675,66 @@ class varm:
 # ### LP-OLS
 
 # %% lpols
-def lpols(Ydata, Xdata=None, Zdata=None, Wdata=None, nL=1, nH=0):
+def lpols_(Ydata, Xdata=None, Zdata=None, nL=1, nH=0):
     """
     Function to estimate LP(nL, nH) model using OLS
     """
 
     if Xdata is None: Xdata = Ydata
     if Zdata is None: Zdata = np.full((0, Ydata.shape[1]), np.nan)
-    if Wdata is None: Wdata = np.full((0, Ydata.shape[1]), np.nan)
 
-    nY, n1 = Ydata.shape
+    nY, nN = Ydata.shape
     nX, _ = Xdata.shape
     nZ, _ = Zdata.shape
-    nT = n1 - nL - nH + 1
-    nK = nL - 1
+    nK = nL-1
+    nT = nN-nK-nH
 
     Y = np.vstack([np.roll(Ydata, -h) for h in range(0, nH+1)])
-    X = np.vstack([Xdata, Zdata])
-    Z = np.vstack([np.ones((1, n1))]+[np.roll(Xdata, l) for l in range(1, nK+1)]+[Wdata])
+    X = np.vstack([np.ones((1, nN))]+[np.roll(Xdata, l) for l in range(nL)]+[Zdata])
 
-    X, Y, Z = C(X[:, nK:n1-nH]), C(Y[:, nK:n1-nH]), C(Z[:, nK:n1-nH])
+    X, Y = C(X[:, nK:-nH]), C(Y[:, nK:-nH])
 
-    Mz = np.eye(nT) - Z.T@np.linalg.inv(Z@Z.T)@Z
-    B = np.linalg.solve(X@Mz@X.T, X@Mz@Y.T).T
-    U = Y@Mz - B@X@Mz
+    B = np.linalg.solve(X@X.T, X@Y.T)
+    U = Y - B.T@X
     U = U.reshape((nH+1, nY, nT))
-    B = B.T.reshape((nX+nZ, nH+1, nY)).transpose((1, 2, 0)) #.swapaxes(1, 2)
+    B = B.reshape((1+nX*nL+nZ, nH+1, nY)).transpose((1, 2, 0))
+    Bc, Bx, Bz = B[:, :, :1], B[:, :, 1:1+nL*nX], B[:, :, 1+nL*nX:]
+    Bx = C(Bx).reshape((nH+1, nY, nL, nX)).transpose((0, 2, 1, 3))
     S = (1/nT)*(U[1]@U[1].T)
-    return B, U, S
+
+    return Bc, Bx, Bz, U, S
 
 # %% lpols
-
-@nb.njit
-def lpols_njit(Ydata, Xdata=None, Zdata=None, Wdata=None, nL=1, nH=0):
+def lpols(Ydata, Xdata=None, Zdata=None, nL=1, nH=0):
     """
     Function to estimate LP(nL, nH) model using OLS
     """
 
     if Xdata is None: Xdata = Ydata
+    if Zdata is None: Zdata = np.full((0, Ydata.shape[1]), np.nan)
 
-    nY, n1 = Ydata.shape
+    nY, nN = Ydata.shape
     nX, _ = Xdata.shape
-    nZ = 0 if Zdata is None else Zdata.shape[0]
-    nT = n1 - nL - nH + 1
-    nK = nL - 1
+    nZ, _ = Zdata.shape
+    nK = nL-1
+    nT = nN-nK-nH
 
-    Y = np.full((0, n1), np.nan)
-    for h in range(0, nH+1): Y = np.vstack((Y, np.roll(Ydata, -h)))
+    Y = C(np.lib.stride_tricks.sliding_window_view(Ydata[:, nK:], nT, axis=1).transpose(1, 0, 2)).reshape(nY*(nH+1), -1)
+    X = np.vstack((np.ones((1, nT)), C(np.lib.stride_tricks.sliding_window_view(Xdata[:, :-nH], nT, axis=1).transpose(1, 0, 2)[::-1]).reshape(nX*nL, -1), Zdata[:, nK:-nH]))
 
-    X = np.asarray(Xdata)
-    if Zdata is not None: X = np.vstack((X, Zdata))
+    X, Y = C(X), C(Y)
 
-    Z = np.ones((1, n1))
-    for l in range(1, nK+1): Z = np.vstack((Z, np.roll(Xdata, l)))
-    if Wdata is not None: Z = np.vstack((Z, Wdata))
-
-    X, Y, Z = C(X[:, nK:n1-nH]), C(Y[:, nK:n1-nH]), C(Z[:, nK:n1-nH])
-
-    Mz = np.eye(nT) - Z.T@np.linalg.inv(Z@Z.T)@Z
-    B = np.linalg.solve(X@Mz@X.T, X@Mz@Y.T).T
-    U = Y@Mz - B@X@Mz
+    B = np.linalg.solve(X@X.T, X@Y.T)
+    U = Y - B.T@X
     U = U.reshape((nH+1, nY, nT))
-    B = B.T.reshape((nX+nZ, nH+1, nY)).transpose((1, 2, 0)) #.swapaxes(1, 2)
+    B = B.reshape((1+nX*nL+nZ, nH+1, nY)).transpose((1, 2, 0))
+    Bc, Bx, Bz = B[:, :, :1], B[:, :, 1:1+nL*nX], B[:, :, 1+nL*nX:]
+    Bx = C(Bx).reshape((nH+1, nY, nL, nX)).transpose((0, 2, 1, 3))
     S = (1/nT)*(U[1]@U[1].T)
-    return B, U, S
 
+    return Bc, Bx, Bz, U, S
+
+lpols_njit = nb.njit(lpols)
 
 # %%
 
@@ -1804,7 +1802,7 @@ class lpm:
         X_var_indices = [i for i, name in enumerate(self.Data.columns) if name in X_var_names]
         Data = self.Data[var_names].iloc[isample[0]-nL:isample[1]+nH, :].values
 
-        B, U, S = lpols_njit(Ydata=Data[:, Y_var_indices].T, Xdata=Data[:, X_var_indices].T, nL=nL, nH=nH)
+        Bc, Bx, Bz, U, S = lpols_njit(Ydata=Data[:, Y_var_indices].T, Xdata=Data[:, X_var_indices].T, nL=nL, nH=nH)
 
 # #         offset = nK
 
@@ -1858,7 +1856,9 @@ class lpm:
 
 
         self.model.parameters = block()
-        self.model.parameters.B = B
+        self.model.parameters.Bc = Bc
+        self.model.parameters.Bx = Bx
+        self.model.parameters.Bz = Bz
         self.model.parameters.S = S
         self.model.parameters.A0inv = block()
         self.model.residuals = block()
@@ -1883,7 +1883,7 @@ class lpm:
         self.model.irfs.spec.nH = self.model.spec.nH
 
         nY = self.model.spec.nY
-        B = self.model.parameters.B
+        Bx = self.model.parameters.Bx
         S = self.model.parameters.S
         U = self.model.residuals.rd
         isample = self.model.spec.isample
@@ -1920,7 +1920,7 @@ class lpm:
             M = instruments.T
 
         if method in ('ch', 'iv'):
-            ir, irc, Psi, A0inv = get_lp_irfs(B, U, S, method=method, impulse=impulse, idv=idv, M=M)
+            ir, irc, Psi, A0inv = get_lp_irfs(Bx, U, S, method=method, impulse=impulse, idv=idv, M=M)
             irfs = block()
             irfs.ir = ir
             irfs.irc = irc
@@ -1937,7 +1937,7 @@ class lpm:
             self.model.slp.iv.idv = idv
             self.model.slp.iv.ins_names = ins_names
 
-        ir, irc, Psi, A0inv = get_lp_irfs(B, U, S, impulse=impulse)
+        ir, irc, Psi, A0inv = get_lp_irfs(Bx, U, S, impulse=impulse)
         self.model.irfs.rd = block()
         self.model.irfs.rd.ir = ir
         self.model.irfs.rd.irc = irc

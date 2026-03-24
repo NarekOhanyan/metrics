@@ -9,8 +9,7 @@ import pandas as pd
 import datetime as dt
 # import statsmodels.api as sm
 # import statsmodels.formula.api as smf
-sys.path.append('../')
-import metrics.metrics as m
+import metrics.metrics as metrics
 
 # Tests
 
@@ -32,7 +31,7 @@ df_Xdata = pd.DataFrame(X.T, index=pd.date_range(start=dt.datetime(2000, 1, 1), 
 # %%
 
 
-class test_fit_var_h_vs_varols(unittest.TestCase):
+class test_func_vs_func(unittest.TestCase):
     """
     Test class
     """
@@ -43,26 +42,22 @@ class test_fit_var_h_vs_varols(unittest.TestCase):
         """
 
         try:
-            B1, _, _, U1, S1 = m.fit_var_h(Y, nC, nL)
-            c2, Bx2, U2, S2 = m.varols(Y, nL=nL)
+            B1, _, _, U1, S1 = metrics.fit_var_h(Y, nC, nL)
+            c2, Bx2, U2, S2 = metrics.varols(Y, nL=nL)
 
-            c1, Bx1 = m.split_C_B(B1, nC, nL, nY)
+            c1, Bx1 = metrics.split_C_B(B1, nC, nL, nY)
             c1 = np.squeeze(c1)
 
-            assert (abs(Bx2 - Bx1) < 1e-10).all(), "\nTest 1 failed"
-            assert (abs(c2 - c1) < 1e-10).all(), "\nTest 2 failed"
-            assert (abs(U2 - U1) < 1e-10).all(), "\nTest 3 failed"
-            assert (abs(S2 - S1) < 1e-10).all(), "\nTest 4 failed"
+            assert np.allclose(Bx1, Bx2, atol=1e-10), "\nTest 1 failed"
+            assert np.allclose(c1, c2, atol=1e-10), "\nTest 2 failed"
+            assert np.allclose(U1, U2, atol=1e-10), "\nTest 3 failed"
+            assert np.allclose(S1, S2, atol=1e-10), "\nTest 4 failed"
+
         except AssertionError:
             print('Test Failed')
             raise
         else:
             print('Test Passed')
-
-class test_VARm_vs_varm(unittest.TestCase):
-    """
-    Test class
-    """
 
     def test_VARm(self):
         """
@@ -70,24 +65,19 @@ class test_VARm_vs_varm(unittest.TestCase):
         """
 
         try:
-            Mdl = m.VARm(df_Ydata).irf(ci='wbs')
-            Mdl1 = m.varm(df_Ydata, nL=1)
-            Mdl1.irf(method='ch', nH=12, ci='wbs')
+            Mdl1 = metrics.VARm(df_Ydata).irf(ci='wbs')
+            Mdl2 = metrics.varm(df_Ydata, nL=1)
+            Mdl2.irf(method='ch', nH=12, ci='wbs')
 
-            assert (abs(Mdl1.model.parameters.c - np.squeeze(Mdl.Est['Bc'])) < 1e-10).all(), "\nTest 1 failed"
-            assert (abs(Mdl1.model.parameters.B - Mdl.Est['Bx']) < 1e-10).all(), "\nTest 2 failed"
-            assert (abs(Mdl1.model.irfs.ch.ir.mean[:, 0, 1] - Mdl.Irfs.Irf_m[1, 0, :]) < 1e-10).all(), "\nTest 3 failed"
+            assert np.allclose(np.squeeze(Mdl1.Est['Bc']), Mdl2.model.parameters.c, atol=1e-10), "\nTest 1 failed"
+            assert np.allclose(Mdl1.Est['Bx'], Mdl2.model.parameters.B, atol=1e-10), "\nTest 2 failed"
+            assert np.allclose(Mdl1.Irfs.Irf_m[1, 0, :], Mdl2.model.irfs.ch.ir.mean[:, 0, 1], atol=1e-10), "\nTest 3 failed"
+
         except AssertionError:
             print('Test Failed')
             raise
         else:
             print('Test Passed')
-
-
-class test_ARDLm_vs_ardlm(unittest.TestCase):
-    """
-    Test class
-    """
 
     def test_ARDLm(self):
         """
@@ -95,15 +85,16 @@ class test_ARDLm_vs_ardlm(unittest.TestCase):
         """
 
         try:
-            Mdl = m.ARDLm(df_Ydata, Y_var=0, X_vars=[1, 2], nLy=2, nLx=3, contemporaneous_impact=False)
-            Mdl1 = m.ardlm(df_Ydata[0], df_Ydata[[1, 2]], nLy=2, nLx=3)
+            Mdl1 = metrics.ARDLm(df_Ydata, Y_var=0, X_vars=[1, 2], nLy=2, nLx=3, contemporaneous_impact=False)
+            Mdl2 = metrics.ardlm(df_Ydata[0], df_Ydata[[1, 2]], nLy=2, nLx=3)
 
-            # print(Mdl1.Est.Bc, np.squeeze(Mdl.Est['Bc']))
-            # print(Mdl1.Est.By, np.squeeze(Mdl.Est['By']))
-            assert (abs(Mdl1.Est.Bc - np.squeeze(Mdl.Est['Bc'])) < 1e-10).all(), "\nTest 1 failed"
-            assert (abs(Mdl1.Est.By.T - np.squeeze(Mdl.Est['By'])) < 1e-10).all(), "\nTest 2 failed"
-            assert (abs(Mdl1.Est.Bx.T - np.squeeze(Mdl.Est['Bx'])) < 1e-10).all(), "\nTest 3 failed"
-            assert (abs(Mdl1.Irfs.Irf[0] - Mdl.Irfs.Irf_m[0]) < 1e-10).all(), "\nTest 4 failed"
+            # print(Mdl2.Est.Bc, np.squeeze(Mdl1.Est['Bc']))
+            # print(Mdl2.Est.By, np.squeeze(Mdl1.Est['By']))
+            assert np.allclose(np.squeeze(Mdl1.Est['Bc']), Mdl2.Est.Bc, atol=1e-10), "\nTest 1 failed"
+            assert np.allclose(np.squeeze(Mdl1.Est['By']), Mdl2.Est.By.T, atol=1e-10), "\nTest 2 failed"
+            assert np.allclose(np.squeeze(Mdl1.Est['Bx']), Mdl2.Est.Bx.T, atol=1e-10), "\nTest 3 failed"
+            assert np.allclose(Mdl1.Irfs.Irf_m[0], Mdl2.Irfs.Irf[0], atol=1e-10), "\nTest 4 failed"
+
         except AssertionError:
             print('Test Failed')
             raise
