@@ -1675,7 +1675,7 @@ class varm:
 # ### LP-OLS
 
 # %% lpols
-def lpols_(Ydata, Xdata=None, Zdata=None, nL=1, nH=0):
+def lpols_(Ydata, Xdata=None, Zdata=None, nC=1, nL=1, nH=0):
     """
     Function to estimate LP(nL, nH) model using OLS
     """
@@ -1690,22 +1690,24 @@ def lpols_(Ydata, Xdata=None, Zdata=None, nL=1, nH=0):
     nT = nN-nK-nH
 
     Y = np.vstack([np.roll(Ydata, -h) for h in range(0, nH+1)])
-    X = np.vstack([np.ones((1, nN))]+[np.roll(Xdata, l) for l in range(nL)]+[Zdata])
+    X = np.vstack([np.ones((nC, nN))]+[np.roll(Xdata, l) for l in range(nL)]+[Zdata])
 
     X, Y = C(X[:, nK:-nH]), C(Y[:, nK:-nH])
 
     B = np.linalg.solve(X@X.T, X@Y.T)
     U = Y - B.T@X
     U = U.reshape((nH+1, nY, nT))
-    B = B.reshape((1+nX*nL+nZ, nH+1, nY)).transpose((1, 2, 0))
-    Bc, Bx, Bz = B[:, :, :1], B[:, :, 1:1+nL*nX], B[:, :, 1+nL*nX:]
+    B = B.reshape((nC+nX*nL+nZ, nH+1, nY)).transpose((1, 2, 0))
+    Bc, Bx, Bz = B[:, :, :nC], B[:, :, nC:nC+nL*nX], B[:, :, nC+nL*nX:]
+    Bc = C(Bc).reshape((nH+1, nY, nC))
     Bx = C(Bx).reshape((nH+1, nY, nL, nX)).transpose((0, 2, 1, 3))
+    Bz = C(Bz).reshape((nH+1, nY, nZ))
     S = (1/nT)*(U[1]@U[1].T)
 
     return Bc, Bx, Bz, U, S
 
 # %% lpols
-def lpols(Ydata, Xdata=None, Zdata=None, nL=1, nH=0):
+def lpols(Ydata, Xdata=None, Zdata=None, nC=1, nL=1, nH=0):
     """
     Function to estimate LP(nL, nH) model using OLS
     """
@@ -1720,16 +1722,18 @@ def lpols(Ydata, Xdata=None, Zdata=None, nL=1, nH=0):
     nT = nN-nK-nH
 
     Y = C(np.lib.stride_tricks.sliding_window_view(Ydata[:, nK:], nT, axis=1).transpose(1, 0, 2)).reshape(nY*(nH+1), -1)
-    X = np.vstack((np.ones((1, nT)), C(np.lib.stride_tricks.sliding_window_view(Xdata[:, :-nH], nT, axis=1).transpose(1, 0, 2)[::-1]).reshape(nX*nL, -1), Zdata[:, nK:-nH]))
+    X = np.vstack((np.ones((nC, nT)), C(np.lib.stride_tricks.sliding_window_view(Xdata[:, :-nH], nT, axis=1).transpose(1, 0, 2)[::-1]).reshape(nX*nL, -1), Zdata[:, nK:-nH]))
 
     X, Y = C(X), C(Y)
 
     B = np.linalg.solve(X@X.T, X@Y.T)
     U = Y - B.T@X
     U = U.reshape((nH+1, nY, nT))
-    B = B.reshape((1+nX*nL+nZ, nH+1, nY)).transpose((1, 2, 0))
-    Bc, Bx, Bz = B[:, :, :1], B[:, :, 1:1+nL*nX], B[:, :, 1+nL*nX:]
+    B = B.reshape((nC+nX*nL+nZ, nH+1, nY)).transpose((1, 2, 0))
+    Bc, Bx, Bz = B[:, :, :nC], B[:, :, nC:nC+nL*nX], B[:, :, nC+nL*nX:]
+    Bc = C(Bc).reshape((nH+1, nY, nC))
     Bx = C(Bx).reshape((nH+1, nY, nL, nX)).transpose((0, 2, 1, 3))
+    Bz = C(Bz).reshape((nH+1, nY, nZ))
     S = (1/nT)*(U[1]@U[1].T)
 
     return Bc, Bx, Bz, U, S
